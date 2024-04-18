@@ -1,0 +1,15 @@
+numpy
+pyyaml
+protobuf==3.19.4
+onnx==1.9.0
+tflite
+pillow==8.2.0
+flatbuffers==1.12.0
+requests
+pytest
+graphviz
+opencv-python==4.2.0.34
+git+https://github.com/kumardesappan/caffe2onnx
+fire
+tqdm
+pandas
