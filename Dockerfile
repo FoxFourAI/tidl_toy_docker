@@ -1,4 +1,5 @@
-FROM nvidia/cuda:11.1.1-cudnn8-devel-ubuntu18.04
+ARG BASE_IMAGE=nvidia/cuda:11.8.0-runtime-ubuntu22.04
+FROM $BASE_IMAGE
 
 SHELL [ "/bin/bash", "-c"]
 # Install required packages
@@ -61,19 +62,24 @@ WORKDIR /home/workdir/installation
 ADD installation/environment.yml environment.yml
 RUN conda env create -f ./environment.yml
 
-RUN echo "source activate tidl-py36" > ~/.bashrc
-ENV PATH /opt/conda/envs/tidl-py36/bin:$PATH
+RUN echo "source activate tidl-py310" > ~/.bashrc
+ENV PATH /opt/conda/envs/tidl-py310/bin:$PATH
 
 ADD installation/requirements.txt requirements.txt
-RUN /opt/conda/envs/tidl-py36/bin/pip install -r requirements.txt
-RUN pip uninstall -y opencv-contrib-python-headless opencv-python-headless # FIX for wrong cv2 version
+RUN /opt/conda/envs/tidl-py310/bin/pip install -r requirements.txt
+RUN pip install git+https://github.com/NVIDIA/TensorRT@release/8.5#subdirectory=tools/onnx-graphsurgeon
+RUN pip install opencv-python
 
 ADD installation/setup_tidl.sh setup_tidl.sh
-
 RUN echo "source /home/workdir/installation/setup_tidl.sh" > ~/.bashrc
 WORKDIR /home/workdir
 
+ADD tidl-onnx-model-optimizer tidl-onnx-model-optimizer
+
 ENV SOC "am68pa"
+ENV TIDL_PATH "/home/workdir/tidl_tools"
+ENV TIDL_PYTHON_INTERPRETER_PATH "/opt/conda/envs/tidl-py310/bin"
+
 
 # Set entrypoint
 ENTRYPOINT [ "/bin/bash" ]

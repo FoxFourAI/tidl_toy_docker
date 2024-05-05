@@ -49,7 +49,8 @@ class SubGraphCompiler:
             "tensor_bits": 16,
             "advanced_options:calibration_frames": self.calibration_frames,
             "advanced_options:calibration_iterations": self.calibration_iterations,
-            "advanced_options:add_data_convert_ops": 1,
+            # "advanced_options:add_data_convert_ops": 1,
+            "advanced_options:add_data_convert_ops": 0,
             "debugTraceLevel": 2,
         }
 
