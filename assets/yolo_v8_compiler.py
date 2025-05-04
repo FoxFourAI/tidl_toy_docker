@@ -31,6 +31,8 @@ class CompilerArgs:
     operation_type: str
     visualize: bool
     visualization_task: str
+    scale_list: Tuple[float, float, float] = (0.003921568627, 0.003921568627, 0.003921568627)
+    mean_list: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 
     def get_calibration_images(self) -> List[str]:
         """
@@ -138,11 +140,12 @@ class YoloV8Compiler:
             print("!!! Optimized model already exists:", out_model_path)
         else:
             from onnx_model_opt import tidlOnnxModelOptimize
+            print(f"Optimizing model with scale_list={self.compiler_args.scale_list}, mean_list={self.compiler_args.mean_list}")
             tidlOnnxModelOptimize(
                 self.compiler_args.weights_path,
                 out_model_path,
-                meanList=(0.0, 0.0, 0.0),
-                scaleList=(0.003921568627, 0.003921568627, 0.003921568627),
+                scaleList=self.compiler_args.scale_list,
+                meanList=self.compiler_args.mean_list,
             )
         proto_model_path = out_model_path.rsplit(".", 1)[0] + ".prototxt"
         if os.path.exists(proto_model_path):
@@ -234,7 +237,7 @@ class YoloV8Compiler:
 
     def inference_8_bit(self, image, confidence_threshold=0.2):
         options = {
-            # "tidl_tools_path": "/home/workdir/tidl_tools",
+            "tidl_tools_path": "/home/workdir/tools/AM68A/tidl_tools",
             "artifacts_folder": os.path.join(
                 self.compiler_args.artifacts_folder,
                 "onnx_tidl",
@@ -330,6 +333,7 @@ def measure_8_bit_model_on_samples(model: YoloV8Compiler, image_paths: List[str]
     # Measure model initialization time
     print("Initializing model...")
     options = {
+        "tidl_tools_path": "/home/workdir/tools/AM68A/tidl_tools",
         "artifacts_folder": os.path.join(
             model.compiler_args.artifacts_folder,
             "onnx_tidl",
@@ -474,7 +478,9 @@ def run_cli(
     tensor_bits: int,
     operation_type: str,
     visualize: bool,
-    visualization_task: str
+    visualization_task: str,
+    scale_list: Tuple[float, float, float] = (0.003921568627, 0.003921568627, 0.003921568627),
+    mean_list: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 ) -> None:
     compiler_args = CompilerArgs(
         weights_path=weights_path,
@@ -490,7 +496,9 @@ def run_cli(
         tensor_bits=tensor_bits,
         operation_type=operation_type,
         visualize=visualize,
-        visualization_task=visualization_task
+        visualization_task=visualization_task,
+        scale_list=scale_list,
+        mean_list=mean_list
     )
     model = YoloV8Compiler(compiler_args)
     
@@ -528,8 +536,12 @@ if __name__ == "__main__":
     parser.add_argument('--visualize', action='store_true',
                         help='Enable visualization of detection results')
     parser.add_argument('--visualization_task', type=str, default='other',
-                        choices=['airplane', 'armored_vehicle', 'other'],
+                        choices=['other'],
                         help='Visualization task type: airplane, armored_vehicle, or other')
+    parser.add_argument('--scale_list', type=str, default='0.003921568627,0.003921568627,0.003921568627',
+                        help='Scale list for model optimization in format "r,g,b"')
+    parser.add_argument('--mean_list', type=str, default='0.0,0.0,0.0',
+                        help='Mean list for model optimization in format "r,g,b"')
     
     args = parser.parse_args()
     
@@ -539,6 +551,23 @@ if __name__ == "__main__":
         input_shape = (height, width)
     except ValueError:
         print(f"Error: Invalid input_shape format. Expected 'height,width', got '{args.input_shape}'")
+        exit(1)
+    
+    # Parse scale_list and mean_list
+    try:
+        scale_list = tuple(map(float, args.scale_list.split(',')))
+        if len(scale_list) != 3:
+            raise ValueError("Scale list must have exactly 3 values")
+    except ValueError as e:
+        print(f"Error parsing scale_list: {e}")
+        exit(1)
+        
+    try:
+        mean_list = tuple(map(float, args.mean_list.split(',')))
+        if len(mean_list) != 3:
+            raise ValueError("Mean list must have exactly 3 values")
+    except ValueError as e:
+        print(f"Error parsing mean_list: {e}")
         exit(1)
     
     run_cli(
@@ -555,5 +584,7 @@ if __name__ == "__main__":
         tensor_bits=args.tensor_bits,
         operation_type=args.operation_type,
         visualize=args.visualize,
-        visualization_task=args.visualization_task
+        visualization_task=args.visualization_task,
+        scale_list=scale_list,
+        mean_list=mean_list
     )

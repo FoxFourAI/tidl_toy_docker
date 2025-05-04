@@ -19,6 +19,10 @@ MAX_ELEMENTS=5
 DEBUG_LEVEL=7
 TENSOR_BITS=8
 
+# NOTE: Those operations would be added to the model by the compiler during optimization phase, input for optimized model: uint8 RGB image
+SCALE_LIST="0.003921568627,0.003921568627,0.003921568627"  # 1/255 for each channel
+MEAN_LIST="0.0,0.0,0.0"  # No mean subtraction
+
 # Check if files and directories exist
 if [ ! -f "$WEIGHTS_PATH" ]; then
     echo "Error: Weights file not found at $WEIGHTS_PATH"
@@ -56,6 +60,8 @@ echo "Running visualization on 32-bit model..."
     --debug_level "$DEBUG_LEVEL" \
     --tensor_bits "$TENSOR_BITS" \
     --operation_type "visualize_32bit" \
+    --scale_list "$SCALE_LIST" \
+    --mean_list "$MEAN_LIST" \
     --visualize
     
 # ============================================================
@@ -75,25 +81,30 @@ python3 ${SCRIPT_DIR}/yolo_v8_compiler.py \
     --debug_level "$DEBUG_LEVEL" \
     --tensor_bits "$TENSOR_BITS" \
     --operation_type "visualize_8bit" \
+    --scale_list "$SCALE_LIST" \
+    --mean_list "$MEAN_LIST" \
     --visualize
 
-# ============================================================
-# Measurement Phase
-# ============================================================
-echo "Measuring performance of compiled model..."
-python3 ${SCRIPT_DIR}/yolo_v8_compiler.py \
-    --weights_path "$WEIGHTS_PATH" \
-    --artifacts_folder "$ARTIFACTS_FOLDER" \
-    --compilation_name "$COMPILATION_NAME" \
-    --meta_layers_names_list "$META_LAYERS_LIST" \
-    --calibration_images_folder "$CALIBRATION_FOLDER" \
-    --input_shape "$INPUT_SHAPE" \
-    --calibration_iterations "$CALIBRATION_ITERATIONS" \
-    --max_calibration_images "$MAX_CALIBRATION_IMAGES" \
-    --max_elements "$MAX_ELEMENTS" \
-    --debug_level "$DEBUG_LEVEL" \
-    --tensor_bits "$TENSOR_BITS" \
-    --operation_type "measure"
+# ON DEVICE ONLY
+# # ============================================================
+# # Measurement Phase
+# # ============================================================
+# echo "Measuring performance of compiled model..."
+# python3 ${SCRIPT_DIR}/yolo_v8_compiler.py \
+#     --weights_path "$WEIGHTS_PATH" \
+#     --artifacts_folder "$ARTIFACTS_FOLDER" \
+#     --compilation_name "$COMPILATION_NAME" \
+#     --meta_layers_names_list "$META_LAYERS_LIST" \
+#     --calibration_images_folder "$CALIBRATION_FOLDER" \
+#     --input_shape "$INPUT_SHAPE" \
+#     --calibration_iterations "$CALIBRATION_ITERATIONS" \
+#     --max_calibration_images "$MAX_CALIBRATION_IMAGES" \
+#     --max_elements "$MAX_ELEMENTS" \
+#     --debug_level "$DEBUG_LEVEL" \
+#     --tensor_bits "$TENSOR_BITS" \
+#     --operation_type "measure" \
+#     --scale_list "$SCALE_LIST" \
+#     --mean_list "$MEAN_LIST"
 
 echo "All operations completed successfully!"
 echo "Model artifacts are located at: $ARTIFACTS_FOLDER"
