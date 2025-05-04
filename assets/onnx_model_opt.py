@@ -12,7 +12,6 @@ def tidlOnnxModelOptimize(in_model_path, out_model_path, scaleList=[0.0078125, 0
     op = onnx.OperatorSetIdProto()
     # Track orginal opset:
     op.version = model.opset_import[0].version
-    print(f"op.version: {op.version}")
     
     # Get Graph:
     originalGraph = model.graph
