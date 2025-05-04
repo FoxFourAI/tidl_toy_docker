@@ -39,28 +39,6 @@ fi
 mkdir -p "$ARTIFACTS_FOLDER"
 
 # ============================================================
-# Optimization Phase
-# ============================================================
-echo "Starting YOLOv8 optimization with ${INPUT_SHAPE} input shape..."
-
-# NOTE: This is a PC environment for running the YOLO compiler with installed not custom TIDL onnxruntime, it is for optimization phase
-/opt/conda/envs/pc-py310/bin/python3 ${SCRIPT_DIR}/yolo_v8_compiler.py \
-    --weights_path "$WEIGHTS_PATH" \
-    --artifacts_folder "$ARTIFACTS_FOLDER" \
-    --compilation_name "$COMPILATION_NAME" \
-    --meta_layers_names_list "$META_LAYERS_LIST" \
-    --calibration_images_folder "$CALIBRATION_FOLDER" \
-    --input_shape "$INPUT_SHAPE" \
-    --calibration_iterations "$CALIBRATION_ITERATIONS" \
-    --max_calibration_images "$MAX_CALIBRATION_IMAGES" \
-    --max_elements "$MAX_ELEMENTS" \
-    --debug_level "$DEBUG_LEVEL" \
-    --tensor_bits "$TENSOR_BITS" \
-    --operation_type "optimize"
-
-echo "Optimization completed successfully!"
-
-# ============================================================
 # Visualization Phase - 32-bit model
 # ============================================================
 echo "Running visualization on 32-bit model..."
@@ -79,29 +57,7 @@ echo "Running visualization on 32-bit model..."
     --tensor_bits "$TENSOR_BITS" \
     --operation_type "visualize_32bit" \
     --visualize
-
-# ============================================================
-# Compilation Phase
-# ============================================================
-echo "Starting YOLOv8 compilation with ${INPUT_SHAPE} input shape..."
-echo "Using ${MAX_CALIBRATION_IMAGES} calibration images and ${CALIBRATION_ITERATIONS} iterations"
-
-python3 ${SCRIPT_DIR}/yolo_v8_compiler.py \
-    --weights_path "$WEIGHTS_PATH" \
-    --artifacts_folder "$ARTIFACTS_FOLDER" \
-    --compilation_name "$COMPILATION_NAME" \
-    --meta_layers_names_list "$META_LAYERS_LIST" \
-    --calibration_images_folder "$CALIBRATION_FOLDER" \
-    --input_shape "$INPUT_SHAPE" \
-    --calibration_iterations "$CALIBRATION_ITERATIONS" \
-    --max_calibration_images "$MAX_CALIBRATION_IMAGES" \
-    --max_elements "$MAX_ELEMENTS" \
-    --debug_level "$DEBUG_LEVEL" \
-    --tensor_bits "$TENSOR_BITS" \
-    --operation_type "compile"
-
-echo "Compilation completed successfully!"
-
+    
 # ============================================================
 # Visualization Phase - 8-bit model
 # ============================================================

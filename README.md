@@ -34,10 +34,12 @@ rm assets/coco_calibration_data.zip
 
 ### Compile & Run Detector with COCO weights (For Output Correctness Check)
 ```bash
+bash ./assets/compile_detector_with_coco_weights.sh
 bash ./assets/run_detector_with_coco_weights.sh
 ```
 
 ### Compile & Run Detector with random weights (For Fast Check)
 ```bash
+bash ./assets/compile_detector_with_random_weights.sh
 bash ./assets/run_detector_with_random_weights.sh
 ```
