@@ -14,5 +14,10 @@ dist/
 
 *.egg-info
 assets/artifacts/
+assets/detectors.zip
+assets/detectors/
+assets/detector_artifacts/
+assets/coco_calibration_data/
+assets/coco_calibration_data.zip
 logs*.txt
 .DS_Store

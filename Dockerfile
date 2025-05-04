@@ -70,13 +70,20 @@ RUN /opt/conda/envs/tidl-py310/bin/pip install -r requirements.txt
 RUN pip install git+https://github.com/NVIDIA/TensorRT@release/8.5#subdirectory=tools/onnx-graphsurgeon
 RUN pip install opencv-python
 
+# Needed to have a PC environment for running the YOLO compiler with installed not custom TIDL onnxruntime
+ADD installation/environment_pc.yml environment_pc.yml
+RUN conda env create -f ./environment_pc.yml
+RUN /opt/conda/envs/pc-py310/bin/pip install -r requirements.txt
+RUN /opt/conda/envs/pc-py310/bin/pip install onnxruntime==1.15.1 opencv-python==4.11.0.86
+
 ADD installation/setup_tidl.sh setup_tidl.sh
 RUN echo "source /home/workdir/installation/setup_tidl.sh" > ~/.bashrc
 WORKDIR /home/workdir
 
-ADD tidl-onnx-model-optimizer tidl-onnx-model-optimizer
+ADD installation/tidl-onnx-model-optimizer tidl-onnx-model-optimizer
+ADD installation/osrt-model-tools osrt-model-tools
 
-ENV SOC "am68pa"
+ENV SOC "am68a"
 ENV TIDL_PATH "/home/workdir/tidl_tools"
 ENV TIDL_PYTHON_INTERPRETER_PATH "/opt/conda/envs/tidl-py310/bin"
 

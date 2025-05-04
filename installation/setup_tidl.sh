@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright (c) 2018-2021, Texas Instruments
+# Copyright (c) 2018-2025, Texas Instruments
 # All Rights Reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -29,7 +29,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ######################################################################
-
+TIDL_PYTHON_INTERPRETER_PATH=/opt/conda/envs/tidl-py310/bin
 
 compile_armnn(){
     #requires tflite2.12 to be build first
@@ -196,7 +196,7 @@ cp_osrt_lib()
 
 
 SCRIPTDIR=`pwd`
-REL=10_00_08_00
+REL=10_01_04_00
 skip_cpp_deps=0
 skip_arm_gcc_download=0
 skip_x86_python_install=0
@@ -233,11 +233,11 @@ case $key in
     echo
     echo Options,
     echo --skip_cpp_deps            Skip Downloading or Compiling dependencies for CPP examples
-    echo --skip_arm_gcc_download            Skip Downloading or setting environment variable  for ARM64_GCC_PATH
-    echo --skip_x86_python_install            Skip installing of python packages
-    echo --use_local            use OSRT packages and tidl_tools from localPath if present
-    echo --load_armnn           load amrnn libs  for arm
-    echo --skip_model_optimizer      skip installing model optimizer python package
+    echo --skip_arm_gcc_download    Skip Downloading or setting environment variable  for ARM64_GCC_PATH
+    echo --skip_x86_python_install  Skip installing of python packages
+    echo --use_local                use OSRT packages and tidl_tools from localPath if present
+    echo --load_armnn               load amrnn libs  for arm
+    echo --skip_model_optimizer     skip installing model optimizer python package
     exit 0
     ;;
 esac
@@ -265,7 +265,7 @@ if [ $version_match -ne 0 ]; then
 return
 fi
 
-arch=$(uname -p)
+arch=$(uname -m)
 if [[ $arch == x86_64 ]]; then
     echo "X64 Architecture"
 elif [[ $arch == aarch64 ]]; then
@@ -291,12 +291,41 @@ if [ -z "$SOC" ];then
     echo "SOC not defined. Run either of below commands"
     echo "export SOC=am62"
     echo "export SOC=am62a"
-    echo "export SOC=am68a"
-    echo "export SOC=am68pa"
-    echo "export SOC=am69a"
-    echo "export SOC=am67a"
+    echo "export SOC=am68pa | j721e"
+    echo "export SOC=am68a  | j721s2"
+    echo "export SOC=am69a  | j784s4"
+    echo "export SOC=am67a  | j722s"
     return
 fi
+
+case "$SOC" in
+  am62|am62a|am68a|am68pa|am69a|am67a)
+    ;;
+  j721e)
+    SOC=am68pa
+    ;;
+  j721s2)
+    SOC=am68a
+    ;; 
+  j784s4)
+    SOC=am69a
+    ;;
+  j722s)
+    SOC=am67a
+    ;;
+  *)
+    echo "Invalid SOC $SOC defined. Allowed values are"
+    echo "export SOC=am62"
+    echo "export SOC=am62a"
+    echo "export SOC=am68pa | j721e"
+    echo "export SOC=am68a  | j721s2"
+    echo "export SOC=am69a  | j784s4"
+    echo "export SOC=am67a  | j722s"
+    return
+    ;;
+esac
+
+echo "SOC=${SOC}"
 
 # ######################################################################
 # # Installing dependencies
@@ -311,18 +340,25 @@ if [[ $arch == x86_64 ]]; then
         echo 'Installing python osrt packages from local...'
         pip_install_local dlr-1.13.0-py3-none-any.whl
         pip_install_local tvm-0.12.0-cp310-cp310-linux_x86_64.whl
-        pip_install_local onnxruntime_tidl-1.14.0-cp310-cp310-linux_x86_64.whl
+        pip_install_local onnxruntime_tidl-1.15.0-cp310-cp310-linux_x86_64.whl
         pip_install_local tflite_runtime-2.12.0-cp310-cp310-linux_x86_64.whl
     else
         echo 'Installing python osrt packages...'
         ${TIDL_PYTHON_INTERPRETER_PATH}/pip install --quiet https://software-dl.ti.com/jacinto7/esd/tidl-tools/$REL/OSRT_TOOLS/X86_64_LINUX/UBUNTU_22_04/dlr-1.13.0-py3-none-any.whl
         ${TIDL_PYTHON_INTERPRETER_PATH}/pip install --quiet https://software-dl.ti.com/jacinto7/esd/tidl-tools/$REL/OSRT_TOOLS/X86_64_LINUX/UBUNTU_22_04/tvm-0.12.0-cp310-cp310-linux_x86_64.whl
-        ${TIDL_PYTHON_INTERPRETER_PATH}/pip install --quiet https://software-dl.ti.com/jacinto7/esd/tidl-tools/$REL/OSRT_TOOLS/X86_64_LINUX/UBUNTU_22_04/onnxruntime_tidl-1.14.0+10000005-cp310-cp310-linux_x86_64.whl
+        ${TIDL_PYTHON_INTERPRETER_PATH}/pip install --quiet https://software-dl.ti.com/jacinto7/esd/tidl-tools/$REL/OSRT_TOOLS/X86_64_LINUX/UBUNTU_22_04/onnxruntime_tidl-1.15.0-cp310-cp310-linux_x86_64.whl
         ${TIDL_PYTHON_INTERPRETER_PATH}/pip install --quiet https://software-dl.ti.com/jacinto7/esd/tidl-tools/$REL/OSRT_TOOLS/X86_64_LINUX/UBUNTU_22_04/tflite_runtime-2.12.0-cp310-cp310-linux_x86_64.whl
     fi
 fi
 
+# Create tools directory
+mkdir -p $SCRIPTDIR/tools
+
 if [ -z "$TIDL_TOOLS_PATH" ]; then
+
+    mkdir -p $SCRIPTDIR/tools/${SOC^^}/
+    cd tools/${SOC^^}/
+
     if [ -f tidl_tools.tar.gz ];then
         rm tidl_tools.tar.gz
     fi
@@ -332,77 +368,20 @@ if [ -z "$TIDL_TOOLS_PATH" ]; then
     if [ -d tidl_tools ];then
         rm -r tidl_tools
     fi
-    if  [ $SOC == am62a ];then
-        if [[ $use_local == 1 ]];then
-            cp_tidl_tools AM62A
-        else
-            if [ $tidl_gpu_tools -eq 1 ];then
-                echo 'Downloading gpu tidl tools for AM62A SOC ...'
-                wget --quiet   https://software-dl.ti.com/jacinto7/esd/tidl-tools/$REL/TIDL_TOOLS/AM62A/tidl_tools_gpu.tar.gz
-            else
-                echo 'Downloading tidl tools for AM62A SOC ...'
-                wget --quiet   https://software-dl.ti.com/jacinto7/esd/tidl-tools/$REL/TIDL_TOOLS/AM62A/tidl_tools.tar.gz
-            fi
-        fi
-    elif  [ $SOC == am68pa ];then
-        if [[ $use_local == 1 ]];then
-            cp_tidl_tools AM68PA
-        else
-            if [ $tidl_gpu_tools -eq 1 ];then
-                echo 'Downloading gpu tidl tools for AM68PA SOC ...'
-                wget --quiet   https://software-dl.ti.com/jacinto7/esd/tidl-tools/$REL/TIDL_TOOLS/AM68PA/tidl_tools_gpu.tar.gz
-            else
-                echo 'Downloading tidl tools for AM68PA SOC ...'
-                wget --quiet   https://software-dl.ti.com/jacinto7/esd/tidl-tools/$REL/TIDL_TOOLS/AM68PA/tidl_tools.tar.gz
-            fi
-        fi
-    elif  [ $SOC == am68a ];then
-        if [[ $use_local == 1 ]];then
-            cp_tidl_tools AM68A
-        else
-            if [ $tidl_gpu_tools -eq 1 ];then
-                echo 'Downloading gpu tidl tools for AM68A SOC ...'
-                wget --quiet   https://software-dl.ti.com/jacinto7/esd/tidl-tools/$REL/TIDL_TOOLS/AM68A/tidl_tools_gpu.tar.gz
-            else
-                echo 'Downloading tidl tools for AM68A SOC ...'
-                wget --quiet   https://software-dl.ti.com/jacinto7/esd/tidl-tools/$REL/TIDL_TOOLS/AM68A/tidl_tools.tar.gz
-            fi
-        fi
-    elif  [ $SOC == am69a ];then
-        if [[ $use_local == 1 ]];then
-            cp_tidl_tools AM69A
-        else
-            if [ $tidl_gpu_tools -eq 1 ];then
-                echo 'Downloading gpu tidl tools for AM69A SOC ...'
-                wget --quiet   https://software-dl.ti.com/jacinto7/esd/tidl-tools/$REL/TIDL_TOOLS/AM69A/tidl_tools_gpu.tar.gz
-            else
-                echo 'Downloading tidl tools for AM69A SOC ...'
-                wget --quiet   https://software-dl.ti.com/jacinto7/esd/tidl-tools/$REL/TIDL_TOOLS/AM69A/tidl_tools.tar.gz
-            fi
-        fi
-    elif  [ $SOC == am67a ];then
-        if [[ $use_local == 1 ]];then
-            cp_tidl_tools AM67A
-        else
-            if [ $tidl_gpu_tools -eq 1 ];then
-                echo 'Downloading gpu tidl tools for AM67A SOC ...'
-                wget --quiet   https://software-dl.ti.com/jacinto7/esd/tidl-tools/$REL/TIDL_TOOLS/AM67A/tidl_tools_gpu.tar.gz
-            else
-                echo 'Downloading tidl tools for AM67A SOC ...'
-                wget --quiet   https://software-dl.ti.com/jacinto7/esd/tidl-tools/$REL/TIDL_TOOLS/AM67A/tidl_tools.tar.gz
-            fi
-        fi
+
+    if [[ $use_local == 1 ]];then
+        cp_tidl_tools ${SOC^^}
     else
-        echo "SOC shell var not set correctly($SOC). Set"
-        echo "export SOC=am62"
-        echo "export SOC=am62a"
-        echo "export SOC=am68pa"
-        echo "export SOC=am68a"
-        echo "export SOC=am69a"
-        echo "export SOC=am67a"
-        return
+        if [ $tidl_gpu_tools -eq 1 ];then
+            echo "Downloading GPU TIDL TOOLS for ${SOC^^} ..."
+            wget --quiet   https://software-dl.ti.com/jacinto7/esd/tidl-tools/$REL/TIDL_TOOLS/${SOC^^}/tidl_tools_gpu.tar.gz
+        else
+            echo "Downloading CPU TIDL TOOLS ${SOC^^} ..."
+            wget --quiet   https://software-dl.ti.com/jacinto7/esd/tidl-tools/$REL/TIDL_TOOLS/${SOC^^}/tidl_tools.tar.gz
+        fi
     fi
-    #Untar tidl tools & remove the tar ball
+
+    # Untar tidl tools & remove the tar ball
     if [ $tidl_gpu_tools -eq 1 ];then
         tar -xzf tidl_tools_gpu.tar.gz
         if [ -f tidl_tools_gpu.tar.gz ];then
@@ -419,19 +398,20 @@ if [ -z "$TIDL_TOOLS_PATH" ]; then
          ln -s  libvx_tidl_rt.so libvx_tidl_rt.so.1.0
     fi
     export TIDL_TOOLS_PATH=$(pwd)
-    #Return to the top level
-    cd ..
+    cd $SCRIPTDIR
+else
+    echo "TIDL_TOOLS_PATH already set to ${TIDL_TOOLS_PATH}. Skipping..."
 fi
 
 # graph optimizer tool setup
 if [[ $arch == x86_64 && $skip_model_optimizer -eq 0 ]]; then
-    cd /home/workdir/tidl-onnx-model-optimizer
+    cd /home/workdir/osrt-model-tools
     source ./setup.sh
+    cd $SCRIPTDIR
 fi
 
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$TIDL_TOOLS_PATH:$TIDL_TOOLS_PATH/osrt_deps:$TIDL_TOOLS_PATH/osrt_deps/opencv/
-
 if [[ $arch == x86_64 && $skip_arm_gcc_download -eq 0 ]]; then
+    cd $SCRIPTDIR/tools/
     if [ ! -d gcc-arm-9.2-2019.12-x86_64-aarch64-none-linux-gnu ];then
         wget --quiet  https://developer.arm.com/-/media/Files/downloads/gnu-a/9.2-2019.12/binrel/gcc-arm-9.2-2019.12-x86_64-aarch64-none-linux-gnu.tar.xz
         tar -xf gcc-arm-9.2-2019.12-x86_64-aarch64-none-linux-gnu.tar.xz
@@ -440,9 +420,11 @@ if [[ $arch == x86_64 && $skip_arm_gcc_download -eq 0 ]]; then
         echo "skipping gcc-arm-9.2-2019.12-x86_64-aarch64-none-linux-gnu download: found $(pwd)/gcc-arm-9.2-2019.12-x86_64-aarch64-none-linux-gnu"
         export ARM64_GCC_PATH=$(pwd)/gcc-arm-9.2-2019.12-x86_64-aarch64-none-linux-gnu
     fi
+    cd $SCRIPTDIR
 fi
 
 if [[ $arch == x86_64 ]]; then
+    cd $SCRIPTDIR/tools/
     if [ -f $CGT7X_ROOT/bin/cl7x ]; then
         echo "CGT7X_ROOT already set to $CGT7X_ROOT, skipping download"
     else
@@ -456,96 +438,79 @@ if [[ $arch == x86_64 ]]; then
             export CGT7X_ROOT=$(pwd)/ti-cgt-c7000_3.1.0.LTS
         fi
     fi
+    cd $SCRIPTDIR
 fi
 
 if [ $skip_cpp_deps -eq 0 ]; then
     if [[ $arch == x86_64 ]]; then
-        if [ -d $TIDL_TOOLS_PATH/osrt_deps ];then
-            rm -r $TIDL_TOOLS_PATH/osrt_deps
+        cd $SCRIPTDIR/tools/
+        if [ -d osrt_deps ];then
+            rm -r osrt_deps
         fi
-        mkdir -p $TIDL_TOOLS_PATH/osrt_deps
-        cd  $TIDL_TOOLS_PATH/osrt_deps
-        # onnx
-        if [ ! -d onnx_1.14.0_x86_u22 ];then
-            echo "Installing:onnxruntime"
-            if [ -f onnx_1.14.0_x86_u22.tar.gz ];then
-                rm onnx_1.14.0_x86_u22.tar.gz
-            fi
-            if [[ $use_local == 1 ]];then
-                cp_osrt_lib onnx_1.14.0_x86_u22.tar.gz
-            else
-                wget --quiet https://software-dl.ti.com/jacinto7/esd/tidl-tools/$REL/OSRT_TOOLS/X86_64_LINUX/UBUNTU_22_04/onnx_1.14.0_x86_u22.tar.gz
-            fi
-            tar -xf onnx_1.14.0_x86_u22.tar.gz
-            cd onnx_1.14.0_x86_u22
-            if [ ! -f libonnxruntime.so ];then
-                ln -s libonnxruntime.so.1.14.0 libonnxruntime.so
-            fi
-            if [ ! -f libonnxruntime.so.1.14.0 ];then
-                ln -s libonnxruntime.so libonnxruntime.so.1.14.0
-            fi
-            cd ../
-            rm onnx_1.14.0_x86_u22.tar.gz
+        mkdir -p osrt_deps
+        cd osrt_deps
+        # onnxruntime
+        echo "Installing:onnxruntime"
+        if [ -f onnx_1.15.0_x86_u22.tar.gz ];then
+            rm onnx_1.15.0_x86_u22.tar.gz
+        fi
+        if [[ $use_local == 1 ]];then
+            cp_osrt_lib onnx_1.15.0_x86_u22.tar.gz
         else
-            echo "skipping onnxruntime setup: found $TIDL_TOOLS_PATH/osrt_deps/onnxruntime"
-            echo "To redo the setup delete:$TIDL_TOOLS_PATH/osrt_deps/onnxruntime and run this script again"
+            wget --quiet   https://software-dl.ti.com/jacinto7/esd/tidl-tools/$REL/OSRT_TOOLS/X86_64_LINUX/UBUNTU_22_04/onnx_1.15.0_x86_u22.tar.gz
         fi
-        # tflite_2.12
-        if [ ! -d tflite_2.12_x86_u22 ];then
-            echo "Installing:tflite_2.12"
-            if [ -f tflite_2.12_x86_u22.tar.gz ];then
-                rm tflite_2.12_x86_u22.tar.gz
-            fi
-            if [[ $use_local == 1 ]];then
-                cp_osrt_lib tflite_2.12_x86_u22.tar.gz
-            else
-                wget --quiet   https://software-dl.ti.com/jacinto7/esd/tidl-tools/$REL/OSRT_TOOLS/X86_64_LINUX/UBUNTU_22_04/tflite_2.12_x86_u22.tar.gz
-            fi
-            tar -xf tflite_2.12_x86_u22.tar.gz
-            rm tflite_2.12_x86_u22.tar.gz   -r
-        else
-            echo "skipping tensorflow setup: found $TIDL_TOOLS_PATH/osrt_deps/tensorflow"
-            echo "To redo the setup delete:$TIDL_TOOLS_PATH/osrt_deps/tensorflow and run this script again"
+        tar -xf onnx_1.15.0_x86_u22.tar.gz
+        cd onnx_1.15.0_x86_u22
+        if [ ! -f libonnxruntime.so ];then
+            ln -s libonnxruntime.so.1.15.0 libonnxruntime.so
         fi
+        if [ ! -f libonnxruntime.so.1.15.0 ];then
+            ln -s libonnxruntime.so libonnxruntime.so.1.15.0
+        fi
+        cd ../
+        rm onnx_1.15.0_x86_u22.tar.gz
 
-        #opencv
-        if [ ! -d  opencv_4.2.0_x86_u22 ];then
-            echo "Installing:opencv"
-            if [ -f opencv_4.2.0_x86_u22.tar.gz ];then
-                rm opencv_4.2.0_x86_u22.tar.gz
-            fi
-            if [[ $use_local == 1 ]];then
-                cp_osrt_lib opencv_4.2.0_x86_u22.tar.gz
-            else
-                wget --quiet   https://software-dl.ti.com/jacinto7/esd/tidl-tools/$REL/OSRT_TOOLS/X86_64_LINUX/UBUNTU_22_04/opencv_4.2.0_x86_u22.tar.gz
-            fi
-            mkdir opencv_4.2.0_x86_u22 && tar xf opencv_4.2.0_x86_u22.tar.gz -C opencv_4.2.0_x86_u22 --strip-components 1
+        # tflite
+        echo "Installing:tflite_2.12"
+        if [ -f tflite_2.12_x86_u22.tar.gz ];then
+            rm tflite_2.12_x86_u22.tar.gz
+        fi
+        if [[ $use_local == 1 ]];then
+            cp_osrt_lib tflite_2.12_x86_u22.tar.gz
+        else
+            wget --quiet   https://software-dl.ti.com/jacinto7/esd/tidl-tools/$REL/OSRT_TOOLS/X86_64_LINUX/UBUNTU_22_04/tflite_2.12_x86_u22.tar.gz
+        fi
+        tar -xf tflite_2.12_x86_u22.tar.gz
+        rm tflite_2.12_x86_u22.tar.gz   -r
+
+        # opencv
+        echo "Installing:opencv"
+        if [ -f opencv_4.2.0_x86_u22.tar.gz ];then
             rm opencv_4.2.0_x86_u22.tar.gz
-        else
-            echo "skipping opencv-4.2.0 setup: found $TIDL_TOOLS_PATH/osrt_deps/opencv-4.2.0_x86_u22"
-            echo "To redo the setup delete:$TIDL_TOOLS_PATH/osrt_deps/opencv-4.2.0_x86_u22 and run this script again"
         fi
+        if [[ $use_local == 1 ]];then
+            cp_osrt_lib opencv_4.2.0_x86_u22.tar.gz
+        else
+            wget --quiet   https://software-dl.ti.com/jacinto7/esd/tidl-tools/$REL/OSRT_TOOLS/X86_64_LINUX/UBUNTU_22_04/opencv_4.2.0_x86_u22.tar.gz
+        fi
+        mkdir opencv_4.2.0_x86_u22 && tar xf opencv_4.2.0_x86_u22.tar.gz -C opencv_4.2.0_x86_u22 --strip-components 1
+        rm opencv_4.2.0_x86_u22.tar.gz
 
-        #dlr
-        if [ ! -d dlr_1.10.0_x86_u22 ];then
-            echo "Installing:dlr"
-            if [ -f dlr_1.10.0_x86_u22.tar.gz ];then
-                rm dlr_1.10.0_x86_u22.tar.gz
-            fi
-            if [[ $use_local == 1 ]];then
-                cp_osrt_lib dlr_1.10.0_x86_u22.tar.gz
-            else
-                wget --quiet https://software-dl.ti.com/jacinto7/esd/tidl-tools/$REL/OSRT_TOOLS/X86_64_LINUX/UBUNTU_22_04/dlr_1.10.0_x86_u22.tar.gz
-            fi
-            mkdir dlr_1.10.0_x86_u22 && tar xf dlr_1.10.0_x86_u22.tar.gz -C dlr_1.10.0_x86_u22 --strip-components 1
-            rm dlr_1.10.0_x86_u22.tar.gz   -r
-        else
-            echo "skipping neo-ai-dlr setup: found $TIDL_TOOLS_PATH/osrt_deps/neo-ai-dlr"
-            echo "To redo the setup delete:$TIDL_TOOLS_PATH/osrt_deps/neo-ai-dlr and run this script again"
+        # dlr
+        echo "Installing:dlr"
+        if [ -f dlr_1.10.0_x86_u22.tar.gz ];then
+            rm dlr_1.10.0_x86_u22.tar.gz
         fi
+        if [[ $use_local == 1 ]];then
+            cp_osrt_lib dlr_1.10.0_x86_u22.tar.gz
+        else
+            wget --quiet   https://software-dl.ti.com/jacinto7/esd/tidl-tools/$REL/OSRT_TOOLS/X86_64_LINUX/UBUNTU_22_04/dlr_1.10.0_x86_u22.tar.gz
+        fi
+        mkdir dlr_1.10.0_x86_u22 && tar xf dlr_1.10.0_x86_u22.tar.gz -C dlr_1.10.0_x86_u22 --strip-components 1
+        rm dlr_1.10.0_x86_u22.tar.gz   -r
 
 dlr_loc=$(${TIDL_PYTHON_INTERPRETER_PATH}/python  << EOF
-import dlr 
+import dlr
 print(dlr.__file__)
 EOF
 )
@@ -556,6 +521,8 @@ EOF
     fi
 
 fi
+
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$TIDL_TOOLS_PATH:$SCRIPTDIR/tools/osrt_deps:$SCRIPTDIR/tools/osrt_deps/opencv_4.2.0_x86_u22/opencv/
 
 if [ $load_armnn -eq 1 ]; then
     if [[ $arch == x86_64 ]]; then
@@ -568,4 +535,15 @@ if [ $load_armnn -eq 1 ]; then
     fi
 fi
 
+cd $TIDL_TOOLS_PATH
+ln -s -r $SCRIPTDIR/tools/osrt_deps/ &> /dev/null
 cd $SCRIPTDIR
+
+echo "========================================================================="
+echo "REL=$REL"
+echo "SOC=$SOC"
+echo "TIDL_TOOLS_PATH=$TIDL_TOOLS_PATH"
+echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
+echo "CGT7X_ROOT=$CGT7X_ROOT"
+echo "ARM64_GCC_PATH=$ARM64_GCC_PATH"
+echo "========================================================================="
