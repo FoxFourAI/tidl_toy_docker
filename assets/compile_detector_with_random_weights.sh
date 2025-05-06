@@ -19,6 +19,10 @@ MAX_ELEMENTS=5
 DEBUG_LEVEL=7
 TENSOR_BITS=8
 
+# NOTE: Those operations would be added to the model by the compiler during optimization phase, input for optimized model: uint8 RGB image
+SCALE_LIST="0.003921568627,0.003921568627,0.003921568627"  # 1/255 for each channel
+MEAN_LIST="0.0,0.0,0.0"  # No mean subtraction
+
 # Check if files and directories exist
 if [ ! -f "$WEIGHTS_PATH" ]; then
     echo "Error: Weights file not found at $WEIGHTS_PATH"

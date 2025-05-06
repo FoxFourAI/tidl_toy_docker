@@ -446,9 +446,16 @@ def run_operations(model: YoloV8Compiler):
         model.optimize()
     
     elif model.compiler_args.operation_type == "compile":
+        start_time = time.time()
         model.compile()
+        compile_time = time.time() - start_time
+        start_time = time.time()
         model.calibrate()
+        calibrate_time = time.time() - start_time
         show_8_bit_model_on_sample(model, image_path)
+        print(f"Compile time: {compile_time:.4f} seconds")
+        print(f"Calibrate time: {calibrate_time:.4f} seconds")
+
 
     elif model.compiler_args.operation_type == "visualize_32bit":
         print("\n=== Running inference and visualization on 32-bit model ===")

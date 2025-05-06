@@ -18,6 +18,7 @@ assets/detectors.zip
 assets/detectors/
 assets/detector_artifacts/
 assets/coco_calibration_data/
+assets/vis-drone-sample/
 assets/coco_calibration_data.zip
 logs*.txt
 .DS_Store

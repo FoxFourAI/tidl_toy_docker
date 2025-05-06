@@ -1,5 +1,5 @@
 #!/bin/bash
-# Script to compile YOLOv8 model for TI hardware with COCO weights
+# Script to compile YOLOv8 model for TI hardware with random weights
 # This uses a 736x1280 input resolution
 
 # Set script to exit on any error
@@ -7,14 +7,14 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE_DIR="/home/workdir"
-WEIGHTS_PATH="${BASE_DIR}/assets/detectors/best_coco_bbox_mAP_epoch_127.onnx"
-META_LAYERS_LIST="${BASE_DIR}/assets/detectors/best_coco_bbox_mAP_epoch_127.prototxt"
-CALIBRATION_FOLDER="${BASE_DIR}/assets/coco_calibration_data"
-ARTIFACTS_FOLDER="${BASE_DIR}/assets/detector_artifacts/yolov8_736x1280_coco"
+WEIGHTS_PATH="${BASE_DIR}/assets/detectors/epoch_1.onnx"
+META_LAYERS_LIST="${BASE_DIR}/assets/detectors/epoch_1.prototxt"
+CALIBRATION_FOLDER="${BASE_DIR}/assets/vis-drone-sample"
+ARTIFACTS_FOLDER="${BASE_DIR}/assets/detector_artifacts/test_run_mmyolo"
 COMPILATION_NAME="default"
 INPUT_SHAPE="736,1280"
-CALIBRATION_ITERATIONS=10
-MAX_CALIBRATION_IMAGES=15
+CALIBRATION_ITERATIONS=2 # 15
+MAX_CALIBRATION_IMAGES=3 # 10
 MAX_ELEMENTS=5
 DEBUG_LEVEL=7
 TENSOR_BITS=8
@@ -106,4 +106,4 @@ python3 ${SCRIPT_DIR}/yolo_v8_compiler.py \
 
 echo "Compilation completed successfully!"
 
-# bash ./assets/compile_detector_with_coco_weights.sh
+# bash ./assets/compile_detector_with_random_weights.sh
