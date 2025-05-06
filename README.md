@@ -45,7 +45,9 @@ Important parameters:
 * `MAX_CALIBRATION_IMAGES` - number of calibration images
 
 Time of compilation:
-`CALIBRATION_ITERATIONS` * `MAX_CALIBRATION_IMAGES` - for testing use 2 (iterations) * 3 (images) = 6 total iterations (~20-30 minutes)
+`CALIBRATION_ITERATIONS` * `MAX_CALIBRATION_IMAGES` - for testing use 2 (iterations) * 3 (images) = 6 total iterations (~10 minutes, 520.4121 seconds on my local runs)
+
+**1 iteration approximately takes 1.5 minutes, based on this you can calculate the time of compilation for your case.**
 
 For real use:
 `CALIBRATION_ITERATIONS` * `MAX_CALIBRATION_IMAGES` * `MAX_ELEMENTS` - for testing use 15 (iterations) * 10 (images) = 150 total iterations (few hours)
