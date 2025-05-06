@@ -452,7 +452,6 @@ def run_operations(model: YoloV8Compiler):
         start_time = time.time()
         model.calibrate()
         calibrate_time = time.time() - start_time
-        show_8_bit_model_on_sample(model, image_path)
         print(f"Compile time: {compile_time:.4f} seconds")
         print(f"Calibrate time: {calibrate_time:.4f} seconds")
 

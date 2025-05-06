@@ -96,7 +96,9 @@ assets/
 │   │   └── visualizations/            # Visualizations of the 8/32-bit model
 ```
 
+## Notes
 
+* one image inference on PC took like ~1 minute
 
 ## Test Repository (Optional)
 ### Prepare Detector weights
