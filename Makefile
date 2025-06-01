@@ -1,6 +1,8 @@
 devices ?= 0
 force-build ?= false
 use-gpu ?= true
+image-name ?= tidl-toy-docker-image:1.0
+container-name ?= tidl-toy-docker-container
 
 ifeq ($(force-build),true)
 	method = run
@@ -15,13 +17,13 @@ else
 endif
 
 build:
-	DOCKER_BUILDKIT=1 docker build -t tidl-toy-docker-image:1.0 .
+	DOCKER_BUILDKIT=1 docker build -t $(image-name) .
 
 no-build-run:
 	docker run -it -d --shm-size=4096m \
 	--network host $(gpu-options) \
 	--mount type=bind,source="$(shell pwd)"/assets,target=/home/workdir/assets \
-	--name tidl-toy-docker-container tidl-toy-docker-image:1.0
+	--name $(container-name) $(image-name)
 
 run: build no-build-run
 
@@ -29,8 +31,8 @@ start:
 	make $(method)
 
 exec:
-	docker exec -it tidl-toy-docker-container /bin/bash
+	docker exec -it $(container-name) /bin/bash
 
 stop:
-	docker stop tidl-toy-docker-container
-	docker rm tidl-toy-docker-container
+	docker stop $(container-name)
+	docker rm $(container-name)

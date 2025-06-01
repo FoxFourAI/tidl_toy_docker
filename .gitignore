@@ -20,5 +20,6 @@ assets/detector_artifacts/
 assets/coco_calibration_data/
 assets/vis-drone-sample/
 assets/coco_calibration_data.zip
+assets/av_calibration_dataset/
 logs*.txt
 .DS_Store

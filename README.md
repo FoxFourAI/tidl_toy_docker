@@ -28,12 +28,12 @@ Example file structure:
 ```
 assets/
 ├── detectors/
-│   ├── epoch_1.onnx
-│   └── epoch_1.prototxt
-└── vis-drone-sample/
+│   ├── best_coco_bbox_mAP_epoch_120.onnx
+│   └── best_coco_bbox_mAP_epoch_120.prototxt
+└── av_calibration_dataset/
 ```
 
-### Edit `assets/compile_detector_with_custom_weights.sh`
+### Edit `assets/compile_detector_with_av_weights.sh`
 * Change `WEIGHTS_PATH` to your weights path
 * Change `META_LAYERS_LIST` to your meta layers list path
 * Change `CALIBRATION_FOLDER` to your calibration folder
@@ -66,12 +66,12 @@ Example:
 ```bash
 WEIGHTS_PATH="${BASE_DIR}/assets/detectors/epoch_1.onnx"
 META_LAYERS_LIST="${BASE_DIR}/assets/detectors/epoch_1.prototxt"
-CALIBRATION_FOLDER="${BASE_DIR}/assets/vis-drone-sample"
-ARTIFACTS_FOLDER="${BASE_DIR}/assets/detector_artifacts/test_run_mmyolo"
+CALIBRATION_FOLDER="${BASE_DIR}/assets/av_calibration_dataset"
+ARTIFACTS_FOLDER="${BASE_DIR}/assets/detector_artifacts/yolov8ti-m-736x1280-vehicles-rev-3-250523"
 COMPILATION_NAME="default"
 INPUT_SHAPE="736,1280"
-CALIBRATION_ITERATIONS=2
-MAX_CALIBRATION_IMAGES=3
+CALIBRATION_ITERATIONS=10
+MAX_CALIBRATION_IMAGES=25
 MAX_ELEMENTS=5
 DEBUG_LEVEL=7
 TENSOR_BITS=8
@@ -79,12 +79,12 @@ SCALE_LIST="0.003921568627,0.003921568627,0.003921568627"  # 1/255 for each chan
 MEAN_LIST="0.0,0.0,0.0"  # No mean subtraction
 ```
 
-### Copy-paste edited variables from `assets/compile_detector_with_custom_weights.sh` to `assets/run_detector_with_custom_weights.sh`
+### Copy-paste edited variables from `assets/compile_detector_with_av_weights.sh` to `assets/run_detector_with_av_weights.sh`
 
-### Compile & Run Detector with Custom Weights
+### Compile & Run Detector with AV Weights
 ```bash
-bash ./assets/compile_detector_with_custom_weights.sh
-bash ./assets/run_detector_with_custom_weights.sh
+bash ./assets/compile_detector_with_av_weights.sh
+bash ./assets/run_detector_with_av_weights.sh
 ```
 
 ### Output file structure
@@ -113,20 +113,34 @@ Note: Available up to 2025-05-10. For new link request author.
 
 ### Prepare Calibration data
 ```bash
-wget "https://foxfour-raw.429eeb224b27f22bcd7d100da8db25db.r2.cloudflarestorage.com/archives/coco_calibration_data.zip?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=7484dfa201fe4f858056bf7fb83bc392/20250504/us-east-1/s3/aws4_request&X-Amz-Date=20250504T111005Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=21fdd285b531f2f262c879b4fc759e97caeab5ae6799dabed9ae044195b8f569" -O assets/coco_calibration_data.zip
-unzip assets/coco_calibration_data.zip -d assets/coco_calibration_data
-rm assets/coco_calibration_data.zip
+wget "https://foxfour-raw.429eeb224b27f22bcd7d100da8db25db.r2.cloudflarestorage.com/archives/av_calibration_dataset.zip?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=7484dfa201fe4f858056bf7fb83bc392/20250601/us-east-1/s3/aws4_request&X-Amz-Date=20250601T122249Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=4aa74310e7d70ff9552babea81c912b10c0ea09f195c784a210ee96551fc1f08" -O assets/av_calibration_dataset.zip
+unzip assets/av_calibration_dataset.zip -d assets/av_calibration_dataset
+rm assets/av_calibration_dataset.zip
 ```
-Note: Available up to 2025-05-10. For new link request author.
+Note: Available up to 2025-06-01. For new link request author.
 
-### Compile & Run Detector with COCO weights (For Output Correctness Check)
+### Compile & Run Detector with AV weights (Autonomous Vehicle Detection)
 ```bash
-bash ./assets/compile_detector_with_coco_weights.sh
-bash ./assets/run_detector_with_coco_weights.sh
+bash ./assets/compile_detector_with_av_weights.sh
+bash ./assets/run_detector_with_av_weights.sh
 ```
 
-### Compile & Run Detector with random weights (For Fast Check)
-```bash
-bash ./assets/compile_detector_with_random_weights.sh
-bash ./assets/run_detector_with_random_weights.sh
-```
+**Note:** The AV weights scripts use different configurations:
+
+**Compilation script** (`compile_detector_with_av_weights.sh`):
+- Weights: `assets/detectors/best_coco_bbox_mAP_epoch_120.onnx`
+- Meta layers: `assets/detectors/best_coco_bbox_mAP_epoch_120.prototxt`
+- Calibration data: `assets/av_calibration_dataset`
+- Artifacts folder: `assets/detector_artifacts/yolov8ti-m-736x1280-vehicles-rev-3-250523`
+- Calibration iterations: 10 (fast compilation)
+- Max calibration images: 25
+
+**Runtime script** (`run_detector_with_av_weights.sh`):
+- Weights: `assets/detectors/best_coco_bbox_mAP_epoch_120.onnx`
+- Meta layers: `assets/detectors/best_coco_bbox_mAP_epoch_120.prototxt`
+- Calibration data: `assets/av_calibration_dataset`
+- Artifacts folder: `assets/detector_artifacts/yolov8ti-m-736x1280-vehicles-rev-3-250523`
+- Calibration iterations: 10 (higher quality)
+- Max calibration images: 25
+
+The compilation script is optimized for faster testing, while the runtime script uses higher quality settings and different model weights for better vehicle detection performance.
