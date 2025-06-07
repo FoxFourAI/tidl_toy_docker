@@ -216,7 +216,7 @@ def main():
       args.output = args.input.replace(".onnx", "_yuv.onnx")
 
    if args.mean is not None and args.std is not None:
-      from onnx_model_opt import tidlOnnxModelOptimize 
+      from onnx_model_optimizer import tidlOnnxModelOptimize 
       tidlOnnxModelOptimize(args.input, args.output, scaleList=args.std, meanList=args.mean)
       args.input = args.output
    

@@ -59,34 +59,33 @@ class CompilerArgs:
             "model_type": "OD",
             "object_detection:meta_arch_type": 8,
             "object_detection:meta_layers_names_list": self.meta_layers_names_list,
+            "advanced_options:params_16bit_names_list": "", # USUALLY EMPTY
+            "advanced_options:output_feature_16bit_names_list": "1,3,175,185,195,180,190,200", # first 2 layers are 16-bit, class layes are 16-bit
+            # "advanced_options:output_feature_16bit_names_list": "1,3,172,174,175,182,184,185,192,194,195,180,190,200", # first 2 layers are 16-bit, class layes are 16-bit
             "advanced_options:calibration_iterations": self.calibration_iterations,
             "advanced_options:calibration_frames": len(self.get_calibration_images()),
             # https://github.com/TexasInstruments/edgeai-benchmark/blob/16e57a65e7aa2802a6ac286be297ecc5cad93344/configs/detection.py#L202
             "accuracy_level": 1,
-            "advanced_options:activation_clipping": 1,
             "advanced_options:add_data_convert_ops": 3,
-            "advanced_options:bias_calibration": 1,
-            "advanced_options:channel_wise_quantization": 0,
-            "advanced_options:high_resolution_optimization": 0,
-            "advanced_options:params_16bit_names_list": "",
+            "advanced_options:high_resolution_optimization": 1,
             "advanced_options:pre_batchnorm_fold": 1,
-            "advanced_options:quantization_scale_type": 0,
+            "advanced_options:quantization_scale_type": 4,
+            "advanced_options:activation_clipping": 1,
             "advanced_options:weight_clipping": 1,
-            "advanced_options:c7x_firmware_version": "10_01_00_01",
-            "c7x_codegen": 0
+            "advanced_options:bias_calibration": 1,
         }
     
     def get_model_config(self) -> Dict[str, Any]:
         return {
-            "score_threshold": 0.5,
+            "score_threshold": 0.25,
             "with_p6": False,
             "normalize_inputs": False,
             "input_shape": self.input_shape,
             "swap": (2, 0, 1),
             "log_severity_level": 3,
             "color_format": "RGB",
-            "center_crop": 0.6666667,
-            "center_crop_min_size": 1280
+            "center_crop": None,
+            "center_crop_min_size": None,
         }
 
 
@@ -139,13 +138,17 @@ class YoloV8Compiler:
         if os.path.exists(out_model_path):
             print("!!! Optimized model already exists:", out_model_path)
         else:
-            from onnx_model_opt import tidlOnnxModelOptimize
+            from onnx_model_optimizer import add_normalization_to_onnx_model, add_nv12_conversion_to_onnx_model
             print(f"Optimizing model with scale_list={self.compiler_args.scale_list}, mean_list={self.compiler_args.mean_list}")
-            tidlOnnxModelOptimize(
+            add_normalization_to_onnx_model(
                 self.compiler_args.weights_path,
                 out_model_path,
                 scaleList=self.compiler_args.scale_list,
                 meanList=self.compiler_args.mean_list,
+            )
+            add_nv12_conversion_to_onnx_model(
+                out_model_path,
+                out_model_path,
             )
         proto_model_path = out_model_path.rsplit(".", 1)[0] + ".prototxt"
         if os.path.exists(proto_model_path):
@@ -452,8 +455,8 @@ def run_operations(model: YoloV8Compiler):
         start_time = time.time()
         model.calibrate()
         calibrate_time = time.time() - start_time
-        print(f"Compile time: {compile_time:.4f} seconds")
-        print(f"Calibrate time: {calibrate_time:.4f} seconds")
+        print(f"Compilation time: {compile_time:.4f} seconds")
+        print(f"Calibration time: {calibrate_time:.4f} seconds")
 
 
     elif model.compiler_args.operation_type == "visualize_32bit":

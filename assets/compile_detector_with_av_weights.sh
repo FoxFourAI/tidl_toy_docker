@@ -10,11 +10,11 @@ BASE_DIR="/home/workdir"
 WEIGHTS_PATH="${BASE_DIR}/assets/detectors/best_coco_bbox_mAP_epoch_120.onnx"
 META_LAYERS_LIST="${BASE_DIR}/assets/detectors/best_coco_bbox_mAP_epoch_120.prototxt"
 CALIBRATION_FOLDER="${BASE_DIR}/assets/av_calibration_dataset"
-ARTIFACTS_FOLDER="${BASE_DIR}/assets/detector_artifacts/yolov8ti-m-736x1280-vehicles-rev-3-250523"
+ARTIFACTS_FOLDER="${BASE_DIR}/assets/detector_artifacts/yolov8ti-m-736x1280-vehicles-rev-3-250523-test-run-5"
 COMPILATION_NAME="default"
 INPUT_SHAPE="736,1280"
-CALIBRATION_ITERATIONS=10
-MAX_CALIBRATION_IMAGES=25
+CALIBRATION_ITERATIONS=20
+MAX_CALIBRATION_IMAGES=50
 MAX_ELEMENTS=5
 DEBUG_LEVEL=7
 TENSOR_BITS=8
@@ -90,6 +90,11 @@ echo "Running visualization on 32-bit model..."
 echo "Starting YOLOv8 compilation with ${INPUT_SHAPE} input shape..."
 echo "Using ${MAX_CALIBRATION_IMAGES} calibration images and ${CALIBRATION_ITERATIONS} iterations"
 
+# Remove logs file if it exists
+if [ -f "$ARTIFACTS_FOLDER/logs.txt" ]; then
+    rm "$ARTIFACTS_FOLDER/logs.txt"
+fi
+
 python3 ${SCRIPT_DIR}/yolo_v8_compiler.py \
     --weights_path "$WEIGHTS_PATH" \
     --artifacts_folder "$ARTIFACTS_FOLDER" \
@@ -102,7 +107,7 @@ python3 ${SCRIPT_DIR}/yolo_v8_compiler.py \
     --max_elements "$MAX_ELEMENTS" \
     --debug_level "$DEBUG_LEVEL" \
     --tensor_bits "$TENSOR_BITS" \
-    --operation_type "compile"
+    --operation_type "compile" | tee -a "$ARTIFACTS_FOLDER/logs.txt"
 
 echo "Compilation completed successfully!"
 
