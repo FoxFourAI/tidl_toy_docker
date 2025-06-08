@@ -40,7 +40,10 @@ def get_center_crop_value(image_shape: Tuple[int, int], center_crop: Optional[Un
 
 
 def preprocess(
-    img, input_size, swap=(2, 0, 1), normalize: bool = True, color_format="RGB", center_crop: Optional[Union[float, int]] = None, center_crop_min_size: Optional[int] = None
+    img, input_size, swap=(2, 0, 1), normalize: bool = True, color_format="RGB", 
+    center_crop: Optional[Union[float, int]] = None, center_crop_min_size: Optional[int] = None,
+    mean_list: Tuple[float, float, float] = (0.0, 0.0, 0.0),
+    scale_list: Tuple[float, float, float] = (0.003921568627, 0.003921568627, 0.003921568627)  # 1/255
 ):
     center_crop = get_center_crop_value(img.shape[:2], center_crop, center_crop_min_size)
     if center_crop is not None:
@@ -51,7 +54,10 @@ def preprocess(
 
     padded_img = padded_img.transpose(swap)
     if normalize:
-        padded_img = padded_img / 255.0
+        # Apply custom normalization: (image + mean) * scale
+        padded_img = padded_img.astype(np.float32)
+        for c in range(padded_img.shape[0]):
+            padded_img[c] = (padded_img[c] + mean_list[c]) * scale_list[c]
         padded_img = np.ascontiguousarray(padded_img, dtype=np.float32)
     else:
         padded_img = np.ascontiguousarray(padded_img)

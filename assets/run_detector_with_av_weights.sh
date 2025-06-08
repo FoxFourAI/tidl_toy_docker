@@ -10,7 +10,7 @@ BASE_DIR="/home/workdir"
 WEIGHTS_PATH="${BASE_DIR}/assets/detectors/best_coco_bbox_mAP_epoch_120.onnx"
 META_LAYERS_LIST="${BASE_DIR}/assets/detectors/best_coco_bbox_mAP_epoch_120.prototxt"
 CALIBRATION_FOLDER="${BASE_DIR}/assets/av_calibration_dataset"
-ARTIFACTS_FOLDER="${BASE_DIR}/assets/detector_artifacts/yolov8ti-m-736x1280-vehicles-rev-3-250523-test-run-5"
+ARTIFACTS_FOLDER="${BASE_DIR}/assets/detector_artifacts/yolov8ti-m-736x1280-vehicles-rev-3-250523-nv12"
 COMPILATION_NAME="default"
 INPUT_SHAPE="736,1280"
 CALIBRATION_ITERATIONS=20
@@ -22,6 +22,7 @@ TENSOR_BITS=8
 # NOTE: Those operations would be added to the model by the compiler during optimization phase, input for optimized model: uint8 RGB image
 SCALE_LIST="0.003921568627,0.003921568627,0.003921568627"  # 1/255 for each channel
 MEAN_LIST="0.0,0.0,0.0"  # No mean subtraction
+OPTIMIZATION_LEVEL="nv12"  # "none", "normalize", "nv12"
 
 # Check if files and directories exist
 if [ ! -f "$WEIGHTS_PATH" ]; then
@@ -59,6 +60,7 @@ echo "Running visualization on 32-bit model..."
     --max_elements "$MAX_ELEMENTS" \
     --debug_level "$DEBUG_LEVEL" \
     --tensor_bits "$TENSOR_BITS" \
+    --optimization_level "$OPTIMIZATION_LEVEL" \
     --operation_type "visualize_32bit" \
     --scale_list "$SCALE_LIST" \
     --mean_list "$MEAN_LIST" \
@@ -80,6 +82,7 @@ python3 ${SCRIPT_DIR}/yolo_v8_compiler.py \
     --max_elements "$MAX_ELEMENTS" \
     --debug_level "$DEBUG_LEVEL" \
     --tensor_bits "$TENSOR_BITS" \
+    --optimization_level "$OPTIMIZATION_LEVEL" \
     --operation_type "visualize_8bit" \
     --scale_list "$SCALE_LIST" \
     --mean_list "$MEAN_LIST" \

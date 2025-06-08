@@ -15,76 +15,6 @@ from yolo_v8_compiler import YoloV8Compiler, CompilerArgs, ModelMetadata
 from utils import read_image
 
 
-def create_dummy_model(output_path, input_shape=(736, 1280)):
-    """Create a simple dummy ONNX model for testing"""
-    import onnx
-    from onnx import helper, TensorProto
-    
-    # Create input
-    input_tensor = helper.make_tensor_value_info(
-        'images', TensorProto.FLOAT, [1, 3, input_shape[0], input_shape[1]]
-    )
-    
-    # Create a simple Identity node (passthrough)
-    identity_node = helper.make_node(
-        'Identity',
-        inputs=['images'],
-        outputs=['output'],
-        name='identity'
-    )
-    
-    # Create output with detection format [batch, num_detections, 6]
-    # 6 = [x1, y1, x2, y2, confidence, class_id]
-    output_tensor = helper.make_tensor_value_info(
-        'output', TensorProto.FLOAT, [1, 25200, 6]
-    )
-    
-    # Create constant for fake detections
-    fake_detections = np.zeros((1, 25200, 6), dtype=np.float32)
-    # Add a few fake detections
-    fake_detections[0, 0] = [100, 100, 200, 200, 0.9, 0]  # High confidence detection
-    fake_detections[0, 1] = [300, 300, 400, 400, 0.8, 1]  # Another detection
-    
-    constant_node = helper.make_node(
-        'Constant',
-        inputs=[],
-        outputs=['output'],
-        name='constant_detections',
-        value=helper.make_tensor(
-            name='const_tensor',
-            data_type=TensorProto.FLOAT,
-            dims=[1, 25200, 6],
-            vals=fake_detections.flatten().tolist()
-        )
-    )
-    
-    # Create graph
-    graph = helper.make_graph(
-        [constant_node],  # Just output constant detections
-        'dummy_yolo',
-        [input_tensor],
-        [output_tensor]
-    )
-    
-    # Create model
-    model = helper.make_model(graph)
-    model.opset_import[0].version = 11
-    
-    # Save model
-    onnx.save(model, output_path)
-    print(f"Created dummy model: {output_path}")
-
-
-def create_dummy_prototxt(output_path):
-    """Create a dummy prototxt file"""
-    content = """model_type: od
-meta_arch_type: 8
-"""
-    with open(output_path, 'w') as f:
-        f.write(content)
-    print(f"Created dummy prototxt: {output_path}")
-
-
 def parse_detection_output(outputs, confidence_threshold=0.5):
     """Parse detection model outputs and return boxes, scores, classes."""
     detections = []
@@ -239,8 +169,8 @@ def compare_results(results):
             print(f"{result['optimization_level']:>10}: {len(detections)} detections")
             if detections:
                 # Show first detection
-                det = detections[0]
-                print(f"            First: bbox={det['bbox']}, conf={det['confidence']:.3f}, class={det['class_id']}")
+                for det in detections:
+                    print(f"            bbox={det['bbox']}, conf={det['confidence']:.3f}, class={det['class_id']}")
     
     # Check if all models produced similar results
     print("\nValidation:")
@@ -292,40 +222,34 @@ def compare_results(results):
 
 
 def test_all_optimization_levels():
-    """Comprehensive test of all optimization levels"""
-    print("Starting comprehensive optimization level test...")
+    """Comprehensive test of all optimization levels using real YOLO model"""
+    print("Starting comprehensive optimization level test with REAL YOLO model...")
     
-    # Create temporary directory
+    # Use real model and image paths
+    original_model_path = "/home/romanv/tidl_toy_docker/assets/detectors/best_coco_bbox_mAP_epoch_120.onnx"
+    prototxt_path = "/home/romanv/tidl_toy_docker/assets/detectors/best_coco_bbox_mAP_epoch_120.prototxt"
+    test_image = '/home/romanv/tidl_toy_docker/assets/av_calibration_dataset/armored_vehicles#aboba-2#repeat_0#crop#-2023-10-13-030400_png.rf.b7b5fb5bdf277a1b90bba926abd9de91_00.jpg'
+    
+    # Verify files exist
+    if not os.path.exists(original_model_path):
+        print(f"Error: Model file not found: {original_model_path}")
+        return
+    
+    if not os.path.exists(prototxt_path):
+        print(f"Error: Prototxt file not found: {prototxt_path}")
+        return
+        
+    if not os.path.exists(test_image):
+        print(f"Error: Test image not found: {test_image}")
+        return
+    
+    print(f"Using real YOLO model: {os.path.basename(original_model_path)}")
+    print(f"Using prototxt: {os.path.basename(prototxt_path)}")
+    print(f"Using test image: {os.path.basename(test_image)}")
+    
+    # Create temporary directory for artifacts
     with tempfile.TemporaryDirectory() as temp_dir:
         print(f"Using temporary directory: {temp_dir}")
-        
-        # Create test files
-        original_model_path = os.path.join(temp_dir, "original_model.onnx")
-        prototxt_path = os.path.join(temp_dir, "model.prototxt")
-        
-        # Find a test image
-        test_image_candidates = [
-            "assets/av_calibration_dataset",
-            "/home/romanv/tidl_toy_docker/assets/av_calibration_dataset"
-        ]
-        
-        test_image = None
-        for candidate in test_image_candidates:
-            if os.path.exists(candidate):
-                images = [f for f in os.listdir(candidate) if f.lower().endswith(('.jpg', '.png', '.jpeg'))]
-                if images:
-                    test_image = os.path.join(candidate, images[0])
-                    break
-        
-        if not test_image:
-            print("Error: No test images found!")
-            return
-            
-        print(f"Using test image: {os.path.basename(test_image)}")
-        
-        # Create dummy model and prototxt
-        create_dummy_model(original_model_path)
-        create_dummy_prototxt(prototxt_path)
         
         # Test each optimization level
         optimization_levels = ["none", "normalize", "nv12"]
@@ -340,13 +264,15 @@ def test_all_optimization_levels():
                 results.append(result)
             except Exception as e:
                 print(f"Error testing {opt_level}: {e}")
+                import traceback
+                traceback.print_exc()
                 results.append(None)
         
         # Compare results
         compare_results(results)
         
         print(f"\n{'='*60}")
-        print("TEST COMPLETED")
+        print("REAL MODEL TEST COMPLETED")
         print(f"{'='*60}")
 
 

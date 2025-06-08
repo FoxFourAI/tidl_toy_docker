@@ -42,14 +42,14 @@ def add_normalization_to_onnx_model(in_model_path, out_model_path, scaleList=[0.
     # Cast Node:
     attrib_dict = {"to": TensorProto.FLOAT}
     cast = onnx.helper.make_node('Cast', inputs=[originalGraph.input[0].name + "Net_IN"], outputs=['TIDL_cast_in'],
-                                 **attrib_dict)
+                                 name='cast_input_to_float', **attrib_dict)
 
     # Add Node:
-    addNode = onnx.helper.make_node('Add', inputs=["TIDL_cast_in", "TIDL_preProc_Bias"], outputs=["TIDL_Scale_In"])
+    addNode = onnx.helper.make_node('Add', inputs=["TIDL_cast_in", "TIDL_preProc_Bias"], outputs=["TIDL_Scale_In"], name='add_bias')
 
     # Scale Node:
     scaleNode = onnx.helper.make_node('Mul', inputs=["TIDL_Scale_In", "TIDL_preProc_Scale"], outputs=[
-        originalGraph.input[0].name])  # Assumption that input[0].name is the input node
+        originalGraph.input[0].name], name='multiply_scale')  # Assumption that input[0].name is the input node
 
     nodeList = [cast, addNode, scaleNode] + nodeList  # Toplogically Sorted
 
@@ -63,7 +63,7 @@ def add_normalization_to_onnx_model(in_model_path, out_model_path, scaleList=[0.
                 attrib_dict_1 = {"to": TensorProto.UINT8}
                 cast_out = onnx.helper.make_node('Cast', inputs=[originalGraph.output[0].name],
                                                  outputs=[originalGraph.output[0].name + 'TIDL_cast_out'],
-                                                 **attrib_dict_1)
+                                                 name='cast_output_to_uint8', **attrib_dict_1)
                 nodeList = nodeList + [cast_out]  # Toplogically Sorted
                 outSequence = [
                     helper.make_tensor_value_info(originalGraph.output[0].name + 'TIDL_cast_out', TensorProto.UINT8,
@@ -309,5 +309,89 @@ def add_nv12_conversion_to_onnx_model(input_path, output_path):
     # Save the modified model
     onnx.save(new_model, output_path)
     print(f"NV12 model saved to: {output_path}")
+
+
+def remove_redundant_cast_nodes(input_path, output_path):
+    """
+    Remove redundant cast nodes from NV12+normalization models.
+    Specifically removes:
+    - 'cast_to_uint8' from NV12 conversion (float→uint8)
+    - 'cast_input_to_float' from normalization (uint8→float)
+    And connects them directly to eliminate unnecessary type conversions.
+    
+    Args:
+        input_path (str): Path to the input ONNX model with redundant casts
+        output_path (str): Path to save the optimized model without redundant casts
+    """
+    # Load the model
+    model = onnx.load(input_path)
+    
+    # Get graph nodes
+    nodes = list(model.graph.node)
+    
+    # Find the cast nodes to remove
+    cast_to_uint8_node = None
+    cast_input_to_float_node = None
+    
+    for node in nodes:
+        if node.name == 'cast_to_uint8':
+            cast_to_uint8_node = node
+        elif node.name == 'cast_input_to_float':
+            cast_input_to_float_node = node
+    
+    if not cast_to_uint8_node or not cast_input_to_float_node:
+        print("Warning: Could not find both cast nodes to remove")
+        # Just copy the model as-is
+        onnx.save(model, output_path)
+        return
+    
+    print(f"Found cast nodes to remove:")
+    print(f"  - {cast_to_uint8_node.name}: {cast_to_uint8_node.input[0]} → {cast_to_uint8_node.output[0]}")
+    print(f"  - {cast_input_to_float_node.name}: {cast_input_to_float_node.input[0]} → {cast_input_to_float_node.output[0]}")
+    
+    # Get the connection points
+    nv12_output = cast_to_uint8_node.input[0]  # Output from NV12 conversion (before cast to uint8)
+    cast_float_output = cast_input_to_float_node.output[0]  # Output of cast_input_to_float
+    
+    # Remove the cast nodes
+    nodes_filtered = [node for node in nodes if node.name not in ['cast_to_uint8', 'cast_input_to_float']]
+    
+    # Update connections: replace all references to cast_float_output with nv12_output
+    for node in nodes_filtered:
+        # Update node inputs
+        for i, input_name in enumerate(node.input):
+            if input_name == cast_float_output:  # Was connected to cast_input_to_float output
+                node.input[i] = nv12_output  # Connect directly to NV12 output
+    
+    print(f"Connecting {nv12_output} directly to normalization nodes (bypassing {cast_float_output})")
+    
+    # Create new graph with filtered nodes
+    new_graph = onnx.helper.make_graph(
+        nodes_filtered,
+        model.graph.name + '_optimized',
+        list(model.graph.input),
+        list(model.graph.output),
+        list(model.graph.initializer)
+    )
+    
+    # Create new model
+    new_model = onnx.helper.make_model(new_graph)
+    new_model.opset_import.extend(model.opset_import)
+    new_model.ir_version = model.ir_version
+    new_model.producer_name = model.producer_name
+    new_model.producer_version = model.producer_version
+    new_model.domain = model.domain
+    new_model.model_version = model.model_version
+    new_model.doc_string = model.doc_string
+    
+    # Validate and save
+    try:
+        onnx.checker.check_model(new_model)
+        print('Optimized model is valid!')
+    except onnx.checker.ValidationError as e:
+        print('Warning: Optimized model validation failed: %s' % e)
+    
+    onnx.save(new_model, output_path)
+    print(f"Optimized model (redundant casts removed) saved to: {output_path}")
 
 

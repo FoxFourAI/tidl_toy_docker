@@ -61,20 +61,48 @@ Parameters, likely you will not need to change them:
 * `COMPILATION_NAME` - name of the compilation (default is `default`)
 * `SCALE_LIST` - scale list for the model
 * `MEAN_LIST` - mean list for the model
+* `OPTIMIZATION_LEVEL` - model optimization level (see below)
+
+## Model Optimization Levels
+
+The YOLO v8 compiler now supports different optimization levels:
+
+* `"none"` - Keep original model unchanged, requires manual input normalization
+* `"normalize"` - Add normalization to ONNX model (default, backward compatible)  
+* `"nv12"` - Add NV12 input conversion + normalization for TI hardware
+
+### Usage Example:
+```bash
+# For standard RGB input with built-in normalization (default)
+OPTIMIZATION_LEVEL="normalize"
+
+# For NV12 input format (TI hardware optimized)
+OPTIMIZATION_LEVEL="nv12"
+
+# For original model without modifications
+OPTIMIZATION_LEVEL="none"
+```
+
+### NV12 Format
+NV12 is a YUV format commonly used in hardware accelerators. When using `optimization_level="nv12"`:
+- Input images are automatically converted from RGB to NV12 format
+- Built-in normalization is applied
+- Optimized for TI hardware processing
 
 Example:
 ```bash
 WEIGHTS_PATH="${BASE_DIR}/assets/detectors/epoch_1.onnx"
 META_LAYERS_LIST="${BASE_DIR}/assets/detectors/epoch_1.prototxt"
-CALIBRATION_FOLDER="${BASE_DIR}/assets/av_calibration_dataset"
-ARTIFACTS_FOLDER="${BASE_DIR}/assets/detector_artifacts/yolov8ti-m-736x1280-vehicles-rev-3-250523"
+CALIBRATION_FOLDER="${BASE_DIR}/assets/vis-drone-sample"
+ARTIFACTS_FOLDER="${BASE_DIR}/assets/detector_artifacts/test_run_mmyolo"
 COMPILATION_NAME="default"
 INPUT_SHAPE="736,1280"
-CALIBRATION_ITERATIONS=10
-MAX_CALIBRATION_IMAGES=25
+CALIBRATION_ITERATIONS=2
+MAX_CALIBRATION_IMAGES=3
 MAX_ELEMENTS=5
 DEBUG_LEVEL=7
 TENSOR_BITS=8
+OPTIMIZATION_LEVEL="normalize"  # or "nv12" for NV12 input
 SCALE_LIST="0.003921568627,0.003921568627,0.003921568627"  # 1/255 for each channel
 MEAN_LIST="0.0,0.0,0.0"  # No mean subtraction
 ```
