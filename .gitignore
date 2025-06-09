@@ -23,3 +23,5 @@ assets/coco_calibration_data.zip
 assets/av_calibration_dataset/
 logs*.txt
 .DS_Store
+assets/calibration_frames/
+assets/clips

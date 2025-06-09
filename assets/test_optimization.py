@@ -102,9 +102,14 @@ def test_optimization_level(temp_dir, original_model_path, prototxt_path, test_i
     try:
         processed_input, ratio, paddings = compiler.prepare_input_data(image, metadata)
         print(f"✓ Input preparation successful:")
-        print(f"  - Input dtype: {processed_input.dtype}")
-        print(f"  - Input shape: {processed_input.shape}")
-        print(f"  - Input range: [{processed_input.min():.6f}, {processed_input.max():.6f}]")
+        if metadata.input_type == "nv12":
+            y_data, uv_data = processed_input
+            print(f"  - Y input dtype: {y_data.dtype}, shape: {y_data.shape}, range: [{y_data.min():.6f}, {y_data.max():.6f}]")
+            print(f"  - UV input dtype: {uv_data.dtype}, shape: {uv_data.shape}, range: [{uv_data.min():.6f}, {uv_data.max():.6f}]")
+        else:
+            print(f"  - Input dtype: {processed_input.dtype}")
+            print(f"  - Input shape: {processed_input.shape}")
+            print(f"  - Input range: [{processed_input.min():.6f}, {processed_input.max():.6f}]")
         print(f"  - Ratio: {ratio:.4f}")
         print(f"  - Paddings: {paddings}")
     except Exception as e:
@@ -115,23 +120,43 @@ def test_optimization_level(temp_dir, original_model_path, prototxt_path, test_i
     try:
         print("Running inference...")
         session = ort.InferenceSession(optimized_model_path)
-        input_name = session.get_inputs()[0].name
-        input_type = session.get_inputs()[0].type
-        print(f"  - Model input: '{input_name}' ({input_type})")
+        input_details = session.get_inputs()
         
-        outputs = session.run(None, {input_name: processed_input})
+        if len(input_details) == 1:
+            input_name = input_details[0].name
+            input_type = input_details[0].type
+            print(f"  - Model input: '{input_name}' ({input_type})")
+            outputs = session.run(None, {input_name: processed_input})
+        else:
+            # Handle two-input format for NV12
+            print(f"  - Model inputs: {[(inp.name, inp.type) for inp in input_details]}")
+            y_data, uv_data = processed_input
+            input_names = [inp.name for inp in input_details]
+            outputs = session.run(None, {input_names[0]: y_data, input_names[1]: uv_data})
+        
         print(f"  - Output shapes: {[out.shape for out in outputs]}")
         
         # Parse detections
         detections = parse_detection_output(outputs, confidence_threshold=0.3)
         print(f"  - Detections found: {len(detections)}")
         
+        # Handle shape and dtype for result tracking
+        if metadata.input_type == "nv12":
+            y_data, uv_data = processed_input
+            result_shape = f"Y:{y_data.shape}, UV:{uv_data.shape}"
+            result_dtype = f"Y:{y_data.dtype}, UV:{uv_data.dtype}"
+            result_range = (float(min(y_data.min(), uv_data.min())), float(max(y_data.max(), uv_data.max())))
+        else:
+            result_shape = processed_input.shape
+            result_dtype = processed_input.dtype
+            result_range = (float(processed_input.min()), float(processed_input.max()))
+        
         return {
             'optimization_level': optimization_level,
             'metadata': metadata,
-            'input_shape': processed_input.shape,
-            'input_dtype': processed_input.dtype,
-            'input_range': (float(processed_input.min()), float(processed_input.max())),
+            'input_shape': result_shape,
+            'input_dtype': result_dtype,
+            'input_range': result_range,
             'detections': detections,
             'model_path': optimized_model_path
         }
@@ -201,16 +226,22 @@ def compare_results(results):
         else:
             print("✗ NORMALIZE should use uint8 input")
             
-        if nv12_result and nv12_result['input_dtype'] == np.uint8:
+        if nv12_result and "uint8" in str(nv12_result['input_dtype']):
             print("✓ NV12 uses uint8 input (correct)")
         else:
             print("✗ NV12 should use uint8 input")
             
         # Check shape differences
-        if nv12_result and len(nv12_result['input_shape']) == 2:
-            print("✓ NV12 uses flattened input (correct)")
+        if nv12_result and "Y:" in str(nv12_result['input_shape']) and "UV:" in str(nv12_result['input_shape']):
+            print("✓ NV12 uses separate Y and UV inputs (correct)")
+            # Verify channels-last format: Y should be (1, H, W, 1), UV should be (1, H//2, W//2, 2)
+            shape_str = str(nv12_result['input_shape'])
+            if ", 1)" in shape_str and ", 2)" in shape_str:
+                print("✓ NV12 uses channels-last format (correct)")
+            else:
+                print("✗ NV12 should use channels-last format (batch, height, width, channels)")
         else:
-            print("✗ NV12 should use flattened NV12 input")
+            print("✗ NV12 should use separate Y and UV inputs")
             
         detection_counts = [len(r['detections']) for r in results]
         if len(set(detection_counts)) == 1:

@@ -112,87 +112,90 @@ def add_nv12_conversion_to_onnx_model(input_path, output_path):
     height = original_input_shape[2]
     width = original_input_shape[3]
     
-    # Create new input for NV12 format (height * width * 1.5)
-    nv12_input_shape = [batch_size, int(height * width * 1.5)]
-    nv12_input = helper.make_tensor_value_info(
-        'nv12_input',
+    # Create two separate inputs for NV12 format in channels-last format
+    # Y input: (1, h, w, 1)
+    y_input_shape = [batch_size, height, width, 1]
+    y_input = helper.make_tensor_value_info(
+        'y_input',
         TensorProto.UINT8,
-        nv12_input_shape
+        y_input_shape
+    )
+    
+    # UV input: (1, h/2, w/2, 2)
+    uv_input_shape = [batch_size, height//2, width//2, 2]
+    uv_input = helper.make_tensor_value_info(
+        'uv_input',
+        TensorProto.UINT8,
+        uv_input_shape
     )
     
     # Create proper NV12 to RGB conversion nodes
     nodes = []
     
-    # Cast to float for processing
-    cast_node = onnx.helper.make_node(
+    # Cast inputs to float for processing
+    y_cast = onnx.helper.make_node(
         'Cast',
-        inputs=['nv12_input'],
-        outputs=['nv12_float'],
+        inputs=['y_input'],
+        outputs=['y_float'],
         to=TensorProto.FLOAT,
-        name='cast_to_float'
+        name='cast_y_to_float'
     )
-    nodes.append(cast_node)
+    nodes.append(y_cast)
     
-    # Extract Y plane (first height*width elements)
-    y_slice_node = onnx.helper.make_node(
-        'Slice',
-        inputs=['nv12_float', 'y_start', 'y_end', 'axes', 'steps'],
-        outputs=['y_flat'],
-        name='extract_y_plane'
+    uv_cast = onnx.helper.make_node(
+        'Cast',
+        inputs=['uv_input'],
+        outputs=['uv_float'],
+        to=TensorProto.FLOAT,
+        name='cast_uv_to_float'
     )
-    nodes.append(y_slice_node)
+    nodes.append(uv_cast)
     
-    # Extract UV plane (remaining elements)
-    uv_slice_node = onnx.helper.make_node(
-        'Slice',
-        inputs=['nv12_float', 'uv_start', 'uv_end', 'axes', 'steps'],
-        outputs=['uv_flat'],
-        name='extract_uv_plane'
-    )
-    nodes.append(uv_slice_node)
-    
-    # Reshape Y plane to [batch, height, width]
-    y_reshape_node = onnx.helper.make_node(
-        'Reshape',
-        inputs=['y_flat', 'y_shape'],
+    # Squeeze Y to remove channel dimension: (1, h, w, 1) -> (1, h, w)
+    y_squeeze = onnx.helper.make_node(
+        'Squeeze',
+        inputs=['y_float'],
         outputs=['y_plane'],
-        name='reshape_y'
+        axes=[3],
+        name='squeeze_y'
     )
-    nodes.append(y_reshape_node)
+    nodes.append(y_squeeze)
     
-    # Reshape UV plane and upsample to match Y dimensions
-    uv_reshape_node = onnx.helper.make_node(
-        'Reshape',
-        inputs=['uv_flat', 'uv_shape'],
+    # Transpose UV from (1, h/2, w/2, 2) to (1, 2, h/2, w/2) for easier processing
+    uv_transpose = onnx.helper.make_node(
+        'Transpose',
+        inputs=['uv_float'],
         outputs=['uv_plane_small'],
-        name='reshape_uv'
+        perm=[0, 3, 1, 2],  # (1, h/2, w/2, 2) -> (1, 2, h/2, w/2)
+        name='transpose_uv'
     )
-    nodes.append(uv_reshape_node)
+    nodes.append(uv_transpose)
     
-    # Upsample UV to full resolution using nearest neighbor
+    # Upsample UV to full resolution using nearest neighbor (BCHW format)
     uv_resize_node = onnx.helper.make_node(
         'Resize',
         inputs=['uv_plane_small', 'roi', 'scales'],
         outputs=['uv_plane'],
         mode='nearest',
+        nearest_mode='round_prefer_ceil',
         name='upsample_uv'
     )
     nodes.append(uv_resize_node)
     
-    # Split UV into U and V channels
+    # Split UV into U and V channels (along channel axis)
     uv_split_node = onnx.helper.make_node(
         'Split',
         inputs=['uv_plane'],
         outputs=['u_plane_full', 'v_plane_full'],
-        axis=3,
+        axis=1,
         split=[1, 1],
         name='split_uv'
     )
     nodes.append(uv_split_node)
     
-    # Squeeze to remove extra dimensions
-    u_squeeze = onnx.helper.make_node('Squeeze', ['u_plane_full'], ['u_plane'], axes=[3], name='squeeze_u')
-    v_squeeze = onnx.helper.make_node('Squeeze', ['v_plane_full'], ['v_plane'], axes=[3], name='squeeze_v')
+    # Squeeze to remove extra channel dimensions
+    u_squeeze = onnx.helper.make_node('Squeeze', ['u_plane_full'], ['u_plane'], axes=[1], name='squeeze_u')
+    v_squeeze = onnx.helper.make_node('Squeeze', ['v_plane_full'], ['v_plane'], axes=[1], name='squeeze_v')
     nodes.extend([u_squeeze, v_squeeze])
     
     # YUV to RGB conversion: 
@@ -210,17 +213,245 @@ def add_nv12_conversion_to_onnx_model(input_path, output_path):
     v_mul_r = onnx.helper.make_node('Mul', ['v_centered', 'coeff_1_402'], ['v_term_r'], name='v_mul_r')
     r_add = onnx.helper.make_node('Add', ['y_plane', 'v_term_r'], ['r_channel'], name='calc_r')
     
-    # G = Y - 0.344 * U_centered - 0.714 * V_centered
-    u_mul_g = onnx.helper.make_node('Mul', ['u_centered', 'coeff_0_344'], ['u_term_g'], name='u_mul_g')
-    v_mul_g = onnx.helper.make_node('Mul', ['v_centered', 'coeff_0_714'], ['v_term_g'], name='v_mul_g')
-    g_sub1 = onnx.helper.make_node('Sub', ['y_plane', 'u_term_g'], ['g_temp'], name='g_sub1')
-    g_sub2 = onnx.helper.make_node('Sub', ['g_temp', 'v_term_g'], ['g_channel'], name='calc_g')
+    # G = Y + (-0.344) * U_centered + (-0.714) * V_centered (avoid Sub operations with two variables)
+    u_mul_g = onnx.helper.make_node('Mul', ['u_centered', 'coeff_neg_0_344'], ['u_term_g'], name='u_mul_g')
+    v_mul_g = onnx.helper.make_node('Mul', ['v_centered', 'coeff_neg_0_714'], ['v_term_g'], name='v_mul_g')
+    g_add1 = onnx.helper.make_node('Add', ['y_plane', 'u_term_g'], ['g_temp'], name='g_add1')
+    g_add2 = onnx.helper.make_node('Add', ['g_temp', 'v_term_g'], ['g_channel'], name='calc_g')
     
     # B = Y + 1.772 * U_centered
     u_mul_b = onnx.helper.make_node('Mul', ['u_centered', 'coeff_1_772'], ['u_term_b'], name='u_mul_b')
     b_add = onnx.helper.make_node('Add', ['y_plane', 'u_term_b'], ['b_channel'], name='calc_b')
     
-    nodes.extend([v_mul_r, r_add, u_mul_g, v_mul_g, g_sub1, g_sub2, u_mul_b, b_add])
+    nodes.extend([v_mul_r, r_add, u_mul_g, v_mul_g, g_add1, g_add2, u_mul_b, b_add])
+    
+    # Clamp values to 0-255 range
+    r_clip = onnx.helper.make_node('Clip', ['r_channel', 'min_val', 'max_val'], ['r_clipped'], name='clip_r')
+    g_clip = onnx.helper.make_node('Clip', ['g_channel', 'min_val', 'max_val'], ['g_clipped'], name='clip_g')
+    b_clip = onnx.helper.make_node('Clip', ['b_channel', 'min_val', 'max_val'], ['b_clipped'], name='clip_b')
+    nodes.extend([r_clip, g_clip, b_clip])
+    
+    # Add channel dimension and stack RGB
+    r_unsqueeze = onnx.helper.make_node('Unsqueeze', ['r_clipped'], ['r_chan'], axes=[1], name='r_unsqueeze')
+    g_unsqueeze = onnx.helper.make_node('Unsqueeze', ['g_clipped'], ['g_chan'], axes=[1], name='g_unsqueeze')
+    b_unsqueeze = onnx.helper.make_node('Unsqueeze', ['b_clipped'], ['b_chan'], axes=[1], name='b_unsqueeze')
+    nodes.extend([r_unsqueeze, g_unsqueeze, b_unsqueeze])
+    
+    # Concatenate RGB channels
+    rgb_concat = onnx.helper.make_node(
+        'Concat',
+        ['r_chan', 'g_chan', 'b_chan'],
+        ['rgb_float'],
+        axis=1,
+        name='concat_rgb'
+    )
+    nodes.append(rgb_concat)
+    
+    # Keep as float (no casting needed)
+    final_output = onnx.helper.make_node(
+        'Identity',
+        inputs=['rgb_float'],
+        outputs=[original_input_name],
+        name='final_output'
+    )
+    nodes.append(final_output)
+    
+    # Create initializers
+    initializers = []
+    
+    # Resize parameters for UV upsampling (BCHW format: scales for [N, C, H, W])
+    initializers.append(numpy_helper.from_array(np.array([], dtype=np.float32), name='roi'))
+    initializers.append(numpy_helper.from_array(np.array([1.0, 1.0, 2.0, 2.0], dtype=np.float32), name='scales'))
+    
+    # YUV to RGB conversion coefficients
+    initializers.append(numpy_helper.from_array(np.array(128.0, dtype=np.float32), name='offset_128'))
+    initializers.append(numpy_helper.from_array(np.array(1.402, dtype=np.float32), name='coeff_1_402'))
+    initializers.append(numpy_helper.from_array(np.array(-0.344, dtype=np.float32), name='coeff_neg_0_344'))
+    initializers.append(numpy_helper.from_array(np.array(-0.714, dtype=np.float32), name='coeff_neg_0_714'))
+    initializers.append(numpy_helper.from_array(np.array(1.772, dtype=np.float32), name='coeff_1_772'))
+    
+    # Clipping values
+    initializers.append(numpy_helper.from_array(np.array(0.0, dtype=np.float32), name='min_val'))
+    initializers.append(numpy_helper.from_array(np.array(255.0, dtype=np.float32), name='max_val'))
+    
+    # Create new graph
+    new_graph = onnx.helper.make_graph(
+        nodes + list(model.graph.node),
+        model.graph.name + '_with_nv12',
+        [y_input, uv_input] + list(model.graph.input)[1:],
+        list(model.graph.output),
+        initializers + list(model.graph.initializer)
+    )
+    
+    # Create new model with same properties as original
+    new_model = onnx.helper.make_model(new_graph)
+    new_model.opset_import.extend(model.opset_import)
+    new_model.ir_version = model.ir_version
+    new_model.producer_name = model.producer_name
+    new_model.producer_version = model.producer_version
+    new_model.domain = model.domain
+    new_model.model_version = model.model_version
+    new_model.doc_string = model.doc_string
+    
+    # Save the modified model
+    onnx.save(new_model, output_path)
+    print(f"NV12 model saved to: {output_path}")
+
+
+def add_nv12_conversion_to_onnx_model_ti_optimized(input_path, output_path):
+    """
+    Add TI-optimized NV12 to RGB preprocessing to an ONNX model.
+    This version avoids operations that are problematic on TI hardware:
+    - No Sub operations with two variable inputs
+    - Simplified UV upsampling without problematic Resize operations
+    
+    Args:
+        input_path (str): Path to the input ONNX model
+        output_path (str): Path to save the modified ONNX model with TI-optimized NV12 preprocessing
+    """
+    # Load the original model
+    model = onnx.load(input_path)
+    
+    # Get the original input info
+    original_input = model.graph.input[0]
+    original_input_name = original_input.name
+    original_input_shape = [dim.dim_value for dim in original_input.type.tensor_type.shape.dim]
+    
+    # Get dimensions
+    batch_size = original_input_shape[0] if original_input_shape[0] > 0 else 1
+    height = original_input_shape[2]
+    width = original_input_shape[3]
+    
+    # Create new input for NV12 format (height * width * 1.5)
+    nv12_input_shape = [batch_size, int(height * width * 1.5)]
+    nv12_input = helper.make_tensor_value_info(
+        'nv12_input',
+        TensorProto.FLOAT,
+        nv12_input_shape
+    )
+    
+    # Create TI-optimized NV12 to RGB conversion nodes
+    nodes = []
+    
+    # Extract Y plane (first height*width elements)
+    y_slice_node = onnx.helper.make_node(
+        'Slice',
+        inputs=['nv12_input', 'y_start', 'y_end', 'axes', 'steps'],
+        outputs=['y_flat'],
+        name='extract_y_plane'
+    )
+    nodes.append(y_slice_node)
+    
+    # Extract UV plane (remaining elements)
+    uv_slice_node = onnx.helper.make_node(
+        'Slice',
+        inputs=['nv12_input', 'uv_start', 'uv_end', 'axes', 'steps'],
+        outputs=['uv_flat'],
+        name='extract_uv_plane'
+    )
+    nodes.append(uv_slice_node)
+    
+    # Reshape Y plane to [batch, height, width]
+    y_reshape_node = onnx.helper.make_node(
+        'Reshape',
+        inputs=['y_flat', 'y_shape'],
+        outputs=['y_plane'],
+        name='reshape_y'
+    )
+    nodes.append(y_reshape_node)
+    
+    # Reshape UV plane to [batch, height//2, width//2, 2]
+    uv_reshape_node = onnx.helper.make_node(
+        'Reshape',
+        inputs=['uv_flat', 'uv_shape'],
+        outputs=['uv_plane_small'],
+        name='reshape_uv'
+    )
+    nodes.append(uv_reshape_node)
+    
+    # TI-optimized UV upsampling using simple nearest neighbor replication
+    # Instead of Resize, use Tile and Reshape operations
+    
+    # First, split UV into U and V channels at half resolution
+    uv_split_node = onnx.helper.make_node(
+        'Split',
+        inputs=['uv_plane_small'],
+        outputs=['u_half', 'v_half'],
+        axis=3,
+        split=[1, 1],
+        name='split_uv_half'
+    )
+    nodes.append(uv_split_node)
+    
+    # Remove extra dimension from U and V
+    u_squeeze = onnx.helper.make_node('Squeeze', ['u_half'], ['u_half_2d'], axes=[3], name='squeeze_u_half')
+    v_squeeze = onnx.helper.make_node('Squeeze', ['v_half'], ['v_half_2d'], axes=[3], name='squeeze_v_half')
+    nodes.extend([u_squeeze, v_squeeze])
+    
+    # Upsample U and V by 2x using Tile (repeat each element)
+    # Reshape to allow tiling along width and height
+    u_reshape_for_tile = onnx.helper.make_node(
+        'Reshape', ['u_half_2d', 'u_tile_shape'], ['u_for_tile'], 
+        name='u_reshape_for_tile'
+    )
+    v_reshape_for_tile = onnx.helper.make_node(
+        'Reshape', ['v_half_2d', 'v_tile_shape'], ['v_for_tile'], 
+        name='v_reshape_for_tile'
+    )
+    nodes.extend([u_reshape_for_tile, v_reshape_for_tile])
+    
+    # Use simple duplication instead of complex resize
+    # Repeat each pixel 2x along width to get full resolution
+    u_tile = onnx.helper.make_node(
+        'Tile', ['u_for_tile', 'tile_repeats'], ['u_tiled'], 
+        name='u_tile'
+    )
+    v_tile = onnx.helper.make_node(
+        'Tile', ['v_for_tile', 'tile_repeats'], ['v_tiled'], 
+        name='v_tile'
+    )
+    nodes.extend([u_tile, v_tile])
+    
+    # Reshape back to full resolution
+    u_reshape_final = onnx.helper.make_node(
+        'Reshape', ['u_tiled', 'full_uv_shape'], ['u_plane'], 
+        name='u_reshape_final'
+    )
+    v_reshape_final = onnx.helper.make_node(
+        'Reshape', ['v_tiled', 'full_uv_shape'], ['v_plane'], 
+        name='v_reshape_final'
+    )
+    nodes.extend([u_reshape_final, v_reshape_final])
+    
+    # TI-optimized YUV to RGB conversion avoiding Sub with two variables
+    # Original formulas:
+    # R = Y + 1.402 * (V - 128)  →  R = Y + 1.402 * V - 179.456
+    # G = Y - 0.344 * (U - 128) - 0.714 * (V - 128)  →  G = Y - 0.344 * U - 0.714 * V + 135.232  
+    # B = Y + 1.772 * (U - 128)  →  B = Y + 1.772 * U - 226.816
+    
+    # Calculate coefficients with offsets to avoid Sub operations
+    # R = Y + 1.402 * V + (-179.456)
+    v_scaled_r = onnx.helper.make_node('Mul', ['v_plane', 'coeff_1_402'], ['v_term_r'], name='v_mul_r')
+    r_add1 = onnx.helper.make_node('Add', ['y_plane', 'v_term_r'], ['r_temp'], name='r_add_v')
+    r_final = onnx.helper.make_node('Add', ['r_temp', 'r_offset'], ['r_channel'], name='calc_r')
+    
+    # G = Y + (-0.344) * U + (-0.714) * V + 135.232
+    u_scaled_g = onnx.helper.make_node('Mul', ['u_plane', 'coeff_neg_0_344'], ['u_term_g'], name='u_mul_g_neg')
+    v_scaled_g = onnx.helper.make_node('Mul', ['v_plane', 'coeff_neg_0_714'], ['v_term_g'], name='v_mul_g_neg')
+    g_add1 = onnx.helper.make_node('Add', ['y_plane', 'u_term_g'], ['g_temp1'], name='g_add_u')
+    g_add2 = onnx.helper.make_node('Add', ['g_temp1', 'v_term_g'], ['g_temp2'], name='g_add_v')
+    g_final = onnx.helper.make_node('Add', ['g_temp2', 'g_offset'], ['g_channel'], name='calc_g')
+    
+    # B = Y + 1.772 * U + (-226.816)
+    u_scaled_b = onnx.helper.make_node('Mul', ['u_plane', 'coeff_1_772'], ['u_term_b'], name='u_mul_b')
+    b_add1 = onnx.helper.make_node('Add', ['y_plane', 'u_term_b'], ['b_temp'], name='b_add_u')
+    b_final = onnx.helper.make_node('Add', ['b_temp', 'b_offset'], ['b_channel'], name='calc_b')
+    
+    nodes.extend([
+        v_scaled_r, r_add1, r_final,
+        u_scaled_g, v_scaled_g, g_add1, g_add2, g_final,
+        u_scaled_b, b_add1, b_final
+    ])
     
     # Clamp values to 0-255 range
     r_clip = onnx.helper.make_node('Clip', ['r_channel', 'min_val', 'max_val'], ['r_clipped'], name='clip_r')
@@ -254,7 +485,7 @@ def add_nv12_conversion_to_onnx_model(input_path, output_path):
     )
     nodes.append(final_cast)
     
-    # Create initializers
+    # Create initializers for TI-optimized approach
     initializers = []
     
     # Slice parameters for Y plane
@@ -272,16 +503,22 @@ def add_nv12_conversion_to_onnx_model(input_path, output_path):
     initializers.append(numpy_helper.from_array(np.array([batch_size, height, width], dtype=np.int64), name='y_shape'))
     initializers.append(numpy_helper.from_array(np.array([batch_size, height//2, width//2, 2], dtype=np.int64), name='uv_shape'))
     
-    # Resize parameters for UV upsampling
-    initializers.append(numpy_helper.from_array(np.array([], dtype=np.float32), name='roi'))
-    initializers.append(numpy_helper.from_array(np.array([1.0, 2.0, 2.0, 1.0], dtype=np.float32), name='scales'))
+    # Tiling parameters for UV upsampling (simple 2x replication)
+    initializers.append(numpy_helper.from_array(np.array([batch_size, height//2, width//2], dtype=np.int64), name='u_tile_shape'))
+    initializers.append(numpy_helper.from_array(np.array([batch_size, height//2, width//2], dtype=np.int64), name='v_tile_shape'))
+    initializers.append(numpy_helper.from_array(np.array([1, 2, 2], dtype=np.int64), name='tile_repeats'))
+    initializers.append(numpy_helper.from_array(np.array([batch_size, height, width], dtype=np.int64), name='full_uv_shape'))
     
-    # YUV to RGB conversion coefficients
-    initializers.append(numpy_helper.from_array(np.array(128.0, dtype=np.float32), name='offset_128'))
+    # YUV to RGB conversion coefficients (avoiding Sub operations)
     initializers.append(numpy_helper.from_array(np.array(1.402, dtype=np.float32), name='coeff_1_402'))
-    initializers.append(numpy_helper.from_array(np.array(0.344, dtype=np.float32), name='coeff_0_344'))
-    initializers.append(numpy_helper.from_array(np.array(0.714, dtype=np.float32), name='coeff_0_714'))
+    initializers.append(numpy_helper.from_array(np.array(-0.344, dtype=np.float32), name='coeff_neg_0_344'))  # Negative to avoid Sub
+    initializers.append(numpy_helper.from_array(np.array(-0.714, dtype=np.float32), name='coeff_neg_0_714'))  # Negative to avoid Sub
     initializers.append(numpy_helper.from_array(np.array(1.772, dtype=np.float32), name='coeff_1_772'))
+    
+    # Offset constants (precomputed to avoid Sub operations)
+    initializers.append(numpy_helper.from_array(np.array(-179.456, dtype=np.float32), name='r_offset'))  # -1.402 * 128
+    initializers.append(numpy_helper.from_array(np.array(135.232, dtype=np.float32), name='g_offset'))   # 0.344 * 128 + 0.714 * 128
+    initializers.append(numpy_helper.from_array(np.array(-226.816, dtype=np.float32), name='b_offset'))  # -1.772 * 128
     
     # Clipping values
     initializers.append(numpy_helper.from_array(np.array(0.0, dtype=np.float32), name='min_val'))
@@ -290,7 +527,7 @@ def add_nv12_conversion_to_onnx_model(input_path, output_path):
     # Create new graph
     new_graph = onnx.helper.make_graph(
         nodes + list(model.graph.node),
-        model.graph.name + '_with_nv12',
+        model.graph.name + '_with_nv12_ti_opt',
         [nv12_input] + list(model.graph.input)[1:],
         list(model.graph.output),
         initializers + list(model.graph.initializer)
@@ -308,7 +545,7 @@ def add_nv12_conversion_to_onnx_model(input_path, output_path):
     
     # Save the modified model
     onnx.save(new_model, output_path)
-    print(f"NV12 model saved to: {output_path}")
+    print(f"TI-optimized NV12 model saved to: {output_path}")
 
 
 def remove_redundant_cast_nodes(input_path, output_path):

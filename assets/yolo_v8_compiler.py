@@ -286,7 +286,7 @@ class YoloV8Compiler:
                     meanList=self.compiler_args.mean_list,
                 )
                 
-                # Step 2: Add NV12 conversion to normalized model  
+                # Step 2: Add TI-optimized NV12 conversion to normalized model  
                 temp_nv12_path = out_model_path.rsplit(".", 1)[0] + "_temp_nv12.onnx"
                 print("Step 2: Adding NV12 conversion")
                 add_nv12_conversion_to_onnx_model(
@@ -309,7 +309,7 @@ class YoloV8Compiler:
                     os.remove(temp_nv12_path)
                     print(f"Cleaned up temporary file: {temp_nv12_path}")
                 
-                print(f"Created optimized NV12 + normalized model (redundant casts removed): {out_model_path}")
+                print(f"Created NV12 + normalized model: {out_model_path}")
                 
                 # Create metadata
                 metadata = ModelMetadata(
@@ -375,26 +375,34 @@ class YoloV8Compiler:
         
         calibration_images = self.compiler_args.get_calibration_images()
 
-        (input_details,) = self.ort_session.get_inputs()
-        batch_size, channel_or_size = input_details.shape[0], input_details.shape[1]
-        print(f"Model input shape: {input_details.shape}")
-
-        assert isinstance(batch_size, str) or batch_size == 1
+        input_details = self.ort_session.get_inputs()
         
-        input_name = input_details.name
-        input_type = input_details.type
-
-        print(f'Input "{input_name}": {input_type} (metadata: {metadata.input_type})')
+        if len(input_details) == 1:
+            # Single input model (none/normalize)
+            input_detail = input_details[0]
+            batch_size, channel_or_size = input_detail.shape[0], input_detail.shape[1]
+            print(f"Model input shape: {input_detail.shape}")
+            
+            assert isinstance(batch_size, str) or batch_size == 1
+            
+            input_name = input_detail.name
+            input_type = input_detail.type
+            print(f'Input "{input_name}": {input_type} (metadata: {metadata.input_type})')
+        else:
+            # Multiple input model (nv12)
+            print(f"Model inputs: {[(inp.name, inp.type, inp.shape) for inp in input_details]} (metadata: {metadata.input_type})")
 
         # Determine expected input type based on metadata
         if metadata.input_type == "nv12":
-            assert input_type == "tensor(uint8)"
-            print("Using NV12 input format")
+            # For NV12, check both inputs are uint8
+            for inp in input_details:
+                assert inp.type == "tensor(uint8)", f"Expected uint8 input, got {inp.type}"
+            print("Using NV12 input format (uint8)")
         elif metadata.input_type == "rgb":
             if metadata.requires_normalization:
                 print("Using RGB input format with manual normalization")
             else:
-                assert input_type == "tensor(uint8)"
+                assert input_details[0].type == "tensor(uint8)"
                 print("Using RGB input format with built-in normalization")
 
         for image_path in calibration_images:
@@ -403,7 +411,14 @@ class YoloV8Compiler:
             # Prepare input based on metadata
             processed_input, ratio, paddings = self.prepare_input_data(input_data, metadata)
             
-            self.ort_session.run(None, {input_name: processed_input})
+            if metadata.input_type == "nv12":
+                # Handle two-input format for NV12
+                input_names = [inp.name for inp in self.ort_session.get_inputs()]
+                y_data, uv_data = processed_input
+                self.ort_session.run(None, {input_names[0]: y_data, input_names[1]: uv_data})
+            else:
+                input_name = input_details[0].name
+                self.ort_session.run(None, {input_name: processed_input})
             
         print("Inference on calibration images complete.")
 
@@ -412,54 +427,85 @@ class YoloV8Compiler:
         print(self.options)
         time.sleep(10)
 
+    def rgb_to_nv12_planes(self, image: np.ndarray, full_range: bool = True):
+        """
+        Convert an RGB image (uint8, shape H×W×3) to TI-style NV12 planes.
+
+        Parameters
+        ----------
+        image : np.ndarray
+            Input RGB image of dtype uint8 and shape (H, W, 3).
+        full_range : bool, default=True
+            • True  → BT.601 full-range (0-255 luma) – what TI TIDL/OpenVX expect.  
+            • False → BT.601 *video* (limited range, 16-235 luma).
+
+        Returns
+        -------
+        y_plane  : np.ndarray  # uint8, shape (1, H,   W,   1) - channels last
+        uv_plane : np.ndarray  # uint8, shape (1, H//2, W//2, 2) - channels last (channel 0 = U/Cb, channel 1 = V/Cr)
+        """
+        # ---------- Sanity checks -------------------------------------------------
+        if image.dtype != np.uint8:
+            raise ValueError("Input must be uint8")
+        if image.ndim != 3 or image.shape[2] != 3:
+            raise ValueError("Input must have shape (H, W, 3)")
+        
+        H, W, _ = image.shape
+        if (H & 1) or (W & 1):
+            raise ValueError("Height and width must be even for 4:2:0 sampling")
+
+        # ---------- Separate channels --------------------------------------------
+        R = image[..., 0].astype(np.float32)
+        G = image[..., 1].astype(np.float32)
+        B = image[..., 2].astype(np.float32)
+
+        # ---------- RGB → YUV -----------------------------------------------------
+        if full_range:
+            # BT.601 full-range
+            Y =  0.29900 * R + 0.58700 * G + 0.11400 * B           # 0-255
+            U = -0.168736 * R - 0.331264 * G + 0.500000 * B + 128  # 0-255
+            V =  0.500000 * R - 0.418688 * G - 0.081312 * B + 128  # 0-255
+        else:
+            # BT.601 video-range (16-235 / 16-240)
+            Y = ( 0.256788 * R + 0.504129 * G + 0.097906 * B) + 16
+            U = (-0.148223 * R - 0.290993 * G + 0.439216 * B) + 128
+            V = ( 0.439216 * R - 0.367788 * G - 0.071427 * B) + 128
+
+        Y = np.clip(Y, 0, 255).round().astype(np.uint8)
+        U = np.clip(U, 0, 255).round().astype(np.uint8)
+        V = np.clip(V, 0, 255).round().astype(np.uint8)
+
+        # ---------- 4:2:0 chroma subsampling (averaging 2×2 blocks) --------------
+        U_sub = (
+            U[0::2, 0::2].astype(np.uint16) + U[0::2, 1::2].astype(np.uint16) +
+            U[1::2, 0::2].astype(np.uint16) + U[1::2, 1::2].astype(np.uint16)
+        ) >> 2  # divide by 4
+        V_sub = (
+            V[0::2, 0::2].astype(np.uint16) + V[0::2, 1::2].astype(np.uint16) +
+            V[1::2, 0::2].astype(np.uint16) + V[1::2, 1::2].astype(np.uint16)
+        ) >> 2
+
+        # ---------- Pack into requested tensor shapes (channels last format) -----
+        y_plane  = Y[None, :, :, None]                              # (1, H,   W,   1)
+        uv_plane = np.stack((U_sub.astype(np.uint8),                # (1, H/2, W/2, 2)
+                             V_sub.astype(np.uint8)), axis=-1)[None, :, :, :]
+
+        return y_plane, uv_plane
+
     def rgb_to_nv12(self, rgb_image):
         """
-        Convert RGB image to NV12 format.
+        Convert RGB image to NV12 format with separate Y and UV inputs in channels-last format.
+        Uses proper BT.601 full-range conversion for TI hardware compatibility.
         
         Args:
             rgb_image: RGB image as numpy array (H, W, 3)
         
         Returns:
-            nv12_data: NV12 data as flattened array
+            tuple: (y_data, uv_data) where:
+                - y_data: Y plane as (1, H, W, 1) uint8, range 0-255
+                - uv_data: UV plane as (1, H//2, W//2, 2) uint8, range 0-255
         """
-        import cv2
-        
-        height, width = rgb_image.shape[:2]
-        
-        # Convert RGB to YUV using OpenCV
-        yuv = cv2.cvtColor(rgb_image, cv2.COLOR_RGB2YUV)
-        
-        # Extract Y channel
-        y_plane = yuv[:, :, 0]
-        
-        # Downsample U and V channels by 2x2
-        u_channel = yuv[::2, ::2, 1]  # Subsample by 2
-        v_channel = yuv[::2, ::2, 2]  # Subsample by 2
-        
-        # Interleave U and V to create UV plane for NV12
-        uv_height, uv_width = u_channel.shape
-        uv_plane = np.empty((uv_height, uv_width, 2), dtype=np.uint8)
-        uv_plane[:, :, 0] = u_channel
-        uv_plane[:, :, 1] = v_channel
-        
-        # Flatten and combine Y and UV planes
-        y_flat = y_plane.flatten()
-        uv_flat = uv_plane.flatten()
-        
-        # Create NV12 data with expected size
-        expected_size = int(height * width * 1.5)
-        nv12_data = np.zeros(expected_size, dtype=np.uint8)
-        
-        # Copy Y plane
-        y_size = height * width
-        nv12_data[:y_size] = y_flat
-        
-        # Copy UV plane (pad or truncate if necessary)
-        uv_start = y_size
-        uv_available = min(len(uv_flat), expected_size - uv_start)
-        nv12_data[uv_start:uv_start + uv_available] = uv_flat[:uv_available]
-        
-        return nv12_data
+        return self.rgb_to_nv12_planes(rgb_image, full_range=True)
 
     def prepare_input_data(self, image, metadata: ModelMetadata):
         """
@@ -492,9 +538,9 @@ class YoloV8Compiler:
                 dh //= 2
                 paddings = (dw, dh)
                 
-                # Convert to NV12
-                nv12_data = self.rgb_to_nv12(resized_image)
-                return nv12_data[np.newaxis], ratio, paddings
+                # Convert to NV12 (returns tuple of Y and UV data)
+                y_data, uv_data = self.rgb_to_nv12(resized_image)
+                return (y_data, uv_data), ratio, paddings
             else:
                 raise ValueError("NV12 models require RGB input image")
                 
@@ -534,16 +580,25 @@ class YoloV8Compiler:
             provider_options=[{}],
             sess_options=so,
         )
-        (input_details,) = ort_session.get_inputs()
-        input_name = input_details.name
-        input_type = input_details.type
-
-        print(f'Input "{input_name}": {input_type} (metadata: {metadata.input_type})')
+        input_details = ort_session.get_inputs()
+        if len(input_details) == 1:
+            input_name = input_details[0].name
+            input_type = input_details[0].type
+            print(f'Input "{input_name}": {input_type} (metadata: {metadata.input_type})')
+        else:
+            print(f'Inputs: {[(inp.name, inp.type) for inp in input_details]} (metadata: {metadata.input_type})')
 
         # Prepare input based on metadata
         processed_input, ratio, paddings = self.prepare_input_data(image, metadata)
         
-        outs = ort_session.run(None, {input_name: processed_input})
+        if metadata.input_type == "nv12":
+            # Handle two-input format for NV12
+            input_names = [inp.name for inp in ort_session.get_inputs()]
+            y_data, uv_data = processed_input
+            outs = ort_session.run(None, {input_names[0]: y_data, input_names[1]: uv_data})
+        else:
+            input_name = input_details[0].name
+            outs = ort_session.run(None, {input_name: processed_input})
         return postprocess(outs[0], ratio, paddings, confidence_threshold)
 
     def inference_8_bit(self, image, confidence_threshold=0.2):
@@ -565,16 +620,25 @@ class YoloV8Compiler:
             provider_options=[options, {}],
             sess_options=so,
         )
-        (input_details,) = ort_session.get_inputs()
-        input_name = input_details.name
-        input_type = input_details.type
-
-        print(f'Input "{input_name}": {input_type} (metadata: {metadata.input_type})')
+        input_details = ort_session.get_inputs()
+        if len(input_details) == 1:
+            input_name = input_details[0].name
+            input_type = input_details[0].type
+            print(f'Input "{input_name}": {input_type} (metadata: {metadata.input_type})')
+        else:
+            print(f'Inputs: {[(inp.name, inp.type) for inp in input_details]} (metadata: {metadata.input_type})')
 
         # Prepare input based on metadata
         processed_input, ratio, paddings = self.prepare_input_data(image, metadata)
         
-        outs = ort_session.run(None, {input_name: processed_input})
+        if metadata.input_type == "nv12":
+            # Handle two-input format for NV12
+            input_names = [inp.name for inp in ort_session.get_inputs()]
+            y_data, uv_data = processed_input
+            outs = ort_session.run(None, {input_names[0]: y_data, input_names[1]: uv_data})
+        else:
+            input_name = input_details[0].name
+            outs = ort_session.run(None, {input_name: processed_input})
         return postprocess(outs[0], ratio, paddings, confidence_threshold)
 
 

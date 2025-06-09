@@ -10,11 +10,11 @@ BASE_DIR="/home/workdir"
 MODEL_PATH="${BASE_DIR}/assets/detectors/best_coco_bbox_mAP_epoch_120.onnx"
 PROTOTXT_PATH="${BASE_DIR}/assets/detectors/best_coco_bbox_mAP_epoch_120.prototxt"
 CALIBRATION_FOLDER="${BASE_DIR}/assets/av_calibration_dataset"
-ARTIFACTS_FOLDER="${BASE_DIR}/assets/detector_artifacts/armored-vehicles-detector-nv12-250609-v2"
+ARTIFACTS_FOLDER="${BASE_DIR}/assets/detector_artifacts/armored-vehicles-detector-nv12-250609-quick"
 COMPILATION_NAME="default"
 INPUT_SHAPE="736,1280"
-CALIBRATION_ITERATIONS=20 # 20
-MAX_CALIBRATION_IMAGES=50 # 50
+CALIBRATION_ITERATIONS=1 # 20
+MAX_CALIBRATION_IMAGES=1 # 50
 MAX_ELEMENTS=5
 DEBUG_LEVEL=7
 TENSOR_BITS=8
@@ -23,7 +23,7 @@ TENSOR_BITS=8
 SCALE_LIST="0.003921568627,0.003921568627,0.003921568627"  # 1/255 for each channel
 MEAN_LIST="0.0,0.0,0.0"  # No mean subtraction
 OPTIMIZATION_LEVEL="nv12"  # Options: "none", "normalize", "nv12"
-INFERENCE_IMAGE_INDEX=2    # Index of calibration image to use for visualization
+INFERENCE_IMAGE_INDEX=0    # Index of calibration image to use for visualization
 
 # Check if files and directories exist
 if [ ! -f "$MODEL_PATH" ]; then

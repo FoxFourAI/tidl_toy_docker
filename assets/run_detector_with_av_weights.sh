@@ -1,5 +1,5 @@
 #!/bin/bash
-# Script to compile YOLOv8 model for TI hardware with random weights
+# Script to run YOLOv8 model for TI hardware with armored vehicle weights
 # This uses a 736x1280 input resolution
 
 # Set script to exit on any error
@@ -7,10 +7,10 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE_DIR="/home/workdir"
-WEIGHTS_PATH="${BASE_DIR}/assets/detectors/best_coco_bbox_mAP_epoch_120.onnx"
-META_LAYERS_LIST="${BASE_DIR}/assets/detectors/best_coco_bbox_mAP_epoch_120.prototxt"
+MODEL_PATH="${BASE_DIR}/assets/detectors/best_coco_bbox_mAP_epoch_120.onnx"
+PROTOTXT_PATH="${BASE_DIR}/assets/detectors/best_coco_bbox_mAP_epoch_120.prototxt"
 CALIBRATION_FOLDER="${BASE_DIR}/assets/av_calibration_dataset"
-ARTIFACTS_FOLDER="${BASE_DIR}/assets/detector_artifacts/yolov8ti-m-736x1280-vehicles-rev-3-250523-nv12"
+ARTIFACTS_FOLDER="${BASE_DIR}/assets/detector_artifacts/armored-vehicles-detector-nv12-250609-v2"
 COMPILATION_NAME="default"
 INPUT_SHAPE="736,1280"
 CALIBRATION_ITERATIONS=20
@@ -22,16 +22,17 @@ TENSOR_BITS=8
 # NOTE: Those operations would be added to the model by the compiler during optimization phase, input for optimized model: uint8 RGB image
 SCALE_LIST="0.003921568627,0.003921568627,0.003921568627"  # 1/255 for each channel
 MEAN_LIST="0.0,0.0,0.0"  # No mean subtraction
-OPTIMIZATION_LEVEL="nv12"  # "none", "normalize", "nv12"
+OPTIMIZATION_LEVEL="nv12"  # Options: "none", "normalize", "nv12"
+INFERENCE_IMAGE_INDEX=2    # Index of calibration image to use for visualization
 
 # Check if files and directories exist
-if [ ! -f "$WEIGHTS_PATH" ]; then
-    echo "Error: Weights file not found at $WEIGHTS_PATH"
+if [ ! -f "$MODEL_PATH" ]; then
+    echo "Error: Model file not found at $MODEL_PATH"
     exit 1
 fi
 
-if [ ! -f "$META_LAYERS_LIST" ]; then
-    echo "Error: Meta layers list file not found at $META_LAYERS_LIST"
+if [ ! -f "$PROTOTXT_PATH" ]; then
+    echo "Error: Prototxt file not found at $PROTOTXT_PATH"
     exit 1
 fi
 
@@ -49,10 +50,10 @@ mkdir -p "$ARTIFACTS_FOLDER"
 echo "Running visualization on 32-bit model..."
 # NOTE: Using PC environment Python for 32-bit model visualization
 /opt/conda/envs/pc-py310/bin/python3 ${SCRIPT_DIR}/yolo_v8_compiler.py \
-    --weights_path "$WEIGHTS_PATH" \
+    --weights_path "$MODEL_PATH" \
     --artifacts_folder "$ARTIFACTS_FOLDER" \
     --compilation_name "$COMPILATION_NAME" \
-    --meta_layers_names_list "$META_LAYERS_LIST" \
+    --meta_layers_names_list "$PROTOTXT_PATH" \
     --calibration_images_folder "$CALIBRATION_FOLDER" \
     --input_shape "$INPUT_SHAPE" \
     --calibration_iterations "$CALIBRATION_ITERATIONS" \
@@ -61,9 +62,8 @@ echo "Running visualization on 32-bit model..."
     --debug_level "$DEBUG_LEVEL" \
     --tensor_bits "$TENSOR_BITS" \
     --optimization_level "$OPTIMIZATION_LEVEL" \
+    --inference_image_index "$INFERENCE_IMAGE_INDEX" \
     --operation_type "visualize_32bit" \
-    --scale_list "$SCALE_LIST" \
-    --mean_list "$MEAN_LIST" \
     --visualize
 
 # ============================================================
@@ -71,10 +71,10 @@ echo "Running visualization on 32-bit model..."
 # ============================================================
 echo "Running visualization on 8-bit model..."
 python3 ${SCRIPT_DIR}/yolo_v8_compiler.py \
-    --weights_path "$WEIGHTS_PATH" \
+    --weights_path "$MODEL_PATH" \
     --artifacts_folder "$ARTIFACTS_FOLDER" \
     --compilation_name "$COMPILATION_NAME" \
-    --meta_layers_names_list "$META_LAYERS_LIST" \
+    --meta_layers_names_list "$PROTOTXT_PATH" \
     --calibration_images_folder "$CALIBRATION_FOLDER" \
     --input_shape "$INPUT_SHAPE" \
     --calibration_iterations "$CALIBRATION_ITERATIONS" \
@@ -83,9 +83,8 @@ python3 ${SCRIPT_DIR}/yolo_v8_compiler.py \
     --debug_level "$DEBUG_LEVEL" \
     --tensor_bits "$TENSOR_BITS" \
     --optimization_level "$OPTIMIZATION_LEVEL" \
+    --inference_image_index "$INFERENCE_IMAGE_INDEX" \
     --operation_type "visualize_8bit" \
-    --scale_list "$SCALE_LIST" \
-    --mean_list "$MEAN_LIST" \
     --visualize
 
 # ON DEVICE ONLY
@@ -94,10 +93,10 @@ python3 ${SCRIPT_DIR}/yolo_v8_compiler.py \
 # # ============================================================
 # echo "Measuring performance of compiled model..."
 # python3 ${SCRIPT_DIR}/yolo_v8_compiler.py \
-#     --weights_path "$WEIGHTS_PATH" \
+#     --weights_path "$MODEL_PATH" \
 #     --artifacts_folder "$ARTIFACTS_FOLDER" \
 #     --compilation_name "$COMPILATION_NAME" \
-#     --meta_layers_names_list "$META_LAYERS_LIST" \
+#     --meta_layers_names_list "$PROTOTXT_PATH" \
 #     --calibration_images_folder "$CALIBRATION_FOLDER" \
 #     --input_shape "$INPUT_SHAPE" \
 #     --calibration_iterations "$CALIBRATION_ITERATIONS" \
@@ -105,11 +104,11 @@ python3 ${SCRIPT_DIR}/yolo_v8_compiler.py \
 #     --max_elements "$MAX_ELEMENTS" \
 #     --debug_level "$DEBUG_LEVEL" \
 #     --tensor_bits "$TENSOR_BITS" \
-#     --operation_type "measure" \
-#     --scale_list "$SCALE_LIST" \
-#     --mean_list "$MEAN_LIST"
+#     --optimization_level "$OPTIMIZATION_LEVEL" \
+#     --inference_image_index "$INFERENCE_IMAGE_INDEX" \
+#     --operation_type "measure"
 
 echo "All operations completed successfully!"
 echo "Model artifacts are located at: $ARTIFACTS_FOLDER"
 
-# bash ./assets/run_detector_with_random_weights.sh
+# bash ./assets/run_detector_with_av_weights.sh
