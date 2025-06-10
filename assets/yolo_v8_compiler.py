@@ -274,40 +274,16 @@ class YoloV8Compiler:
                 )
                 
             elif self.compiler_args.optimization_level == "nv12":
-                from onnx_model_optimizer import add_normalization_to_onnx_model, add_nv12_conversion_to_onnx_model, remove_redundant_cast_nodes
+                from onnx_model_optimizer import add_nv12_normalization
                 
-                # Step 1: Create temporary normalized model
-                temp_normalized_path = out_model_path.rsplit(".", 1)[0] + "_temp_normalized.onnx"
-                print(f"Step 1: Adding normalization with scale_list={self.compiler_args.scale_list}, mean_list={self.compiler_args.mean_list}")
-                add_normalization_to_onnx_model(
+                # Single step: NV12 conversion + normalization combined
+                print(f"Creating NV12 + normalization model with scale_list={self.compiler_args.scale_list}, mean_list={self.compiler_args.mean_list}")
+                add_nv12_normalization(
                     self.compiler_args.weights_path,
-                    temp_normalized_path,
+                    out_model_path,
                     scaleList=self.compiler_args.scale_list,
                     meanList=self.compiler_args.mean_list,
                 )
-                
-                # Step 2: Add TI-optimized NV12 conversion to normalized model  
-                temp_nv12_path = out_model_path.rsplit(".", 1)[0] + "_temp_nv12.onnx"
-                print("Step 2: Adding NV12 conversion")
-                add_nv12_conversion_to_onnx_model(
-                    temp_normalized_path,
-                    temp_nv12_path,
-                )
-                
-                # Step 3: Remove redundant cast nodes (float→uint8→float becomes direct float)
-                print("Step 3: Removing redundant cast nodes to optimize type conversions")
-                remove_redundant_cast_nodes(
-                    temp_nv12_path,
-                    out_model_path
-                )
-                
-                # Clean up temporary files
-                if os.path.exists(temp_normalized_path):
-                    os.remove(temp_normalized_path)
-                    print(f"Cleaned up temporary file: {temp_normalized_path}")
-                if os.path.exists(temp_nv12_path):
-                    os.remove(temp_nv12_path)
-                    print(f"Cleaned up temporary file: {temp_nv12_path}")
                 
                 print(f"Created NV12 + normalized model: {out_model_path}")
                 

@@ -25,3 +25,4 @@ logs*.txt
 .DS_Store
 assets/calibration_frames/
 assets/clips
+assets/clips_out
