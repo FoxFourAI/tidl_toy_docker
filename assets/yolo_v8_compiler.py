@@ -71,7 +71,7 @@ class CompilerArgs:
             "advanced_options:calibration_frames": len(self.get_calibration_images()),
             # https://github.com/TexasInstruments/edgeai-benchmark/blob/16e57a65e7aa2802a6ac286be297ecc5cad93344/configs/detection.py#L202
             "accuracy_level": 1,
-            "advanced_options:add_data_convert_ops": 3,
+            "advanced_options:add_data_convert_ops": 1,
             "advanced_options:high_resolution_optimization": 1,
             "advanced_options:pre_batchnorm_fold": 1,
             "advanced_options:quantization_scale_type": 4,
