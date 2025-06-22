@@ -16,7 +16,19 @@ def postprocess(dets, ratio, paddings, score_threshold):
         dets = dets[0]
     valid_indices = dets[:, 4] > score_threshold
     dets = dets[valid_indices]
-    dets[:, :4] /= ratio
+    
+    # Handle both single ratio (backward compatibility) and separate x,y ratios
+    if isinstance(ratio, (tuple, list)) and len(ratio) == 2:
+        # Separate x and y ratios for direct resizing
+        ratio_x, ratio_y = ratio
+        dets[:, 0] /= ratio_x  # x1
+        dets[:, 1] /= ratio_y  # y1
+        dets[:, 2] /= ratio_x  # x2
+        dets[:, 3] /= ratio_y  # y2
+    else:
+        # Single ratio (original behavior)
+        dets[:, :4] /= ratio
+    
     bboxes = np.round(dets[:, :4].copy()).astype(int)
     bboxes = bboxes_xyxy2xywh(bboxes)
     if paddings is not None:

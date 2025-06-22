@@ -503,16 +503,16 @@ class YoloV8Compiler:
                 import cv2
                 
                 target_height, target_width = metadata.input_shape
-                # Resize image to target size
+                # Direct resize to target size (no aspect ratio preservation, no padding)
                 resized_image = cv2.resize(image, (target_width, target_height))
                 
-                # Calculate ratio and paddings for postprocessing
-                ratio = min(target_height / image.shape[0], target_width / image.shape[1])
-                new_unpad = int(round(image.shape[1] * ratio)), int(round(image.shape[0] * ratio))
-                dw, dh = target_width - new_unpad[0], target_height - new_unpad[1]
-                dw //= 2  # divide padding into 2 sides
-                dh //= 2
-                paddings = (dw, dh)
+                # For direct resizing, calculate the actual scaling factors
+                ratio_x = target_width / image.shape[1]
+                ratio_y = target_height / image.shape[0]
+                # Return separate ratios for proper coordinate transformation
+                ratio = (ratio_x, ratio_y)
+                # No padding with direct resizing
+                paddings = (0, 0)
                 
                 # Convert to NV12 (returns tuple of Y and UV data)
                 y_data, uv_data = self.rgb_to_nv12(resized_image)
@@ -521,25 +521,45 @@ class YoloV8Compiler:
                 raise ValueError("NV12 models require RGB input image")
                 
         elif metadata.input_type == "rgb":
-            # For RGB models - normalize=True only if model requires normalization (optimization_level="none")
-            processed_image, ratio, paddings = preprocess(
-                image,
-                input_size=metadata.input_shape,
-                swap=model_config["swap"],
-                normalize=metadata.requires_normalization,  # True for "none", False for "normalize"/"nv12"
-                color_format=model_config["color_format"],
-                center_crop=model_config["center_crop"],
-                mean_list=metadata.mean_list,
-                scale_list=metadata.scale_list
-            )
+            # For RGB models - direct resize without padding (consistent with NV12)
+            import cv2
             
-            # For models with built-in normalization, keep as uint8
-            # For models without built-in normalization, keep as float
-            if not metadata.requires_normalization:
-                # Model has built-in normalization, ensure uint8 format
-                if processed_image.dtype != np.uint8:
-                    processed_image = np.clip(processed_image * 255, 0, 255).astype(np.uint8)
-            # else: keep as float for "none" optimization level
+            target_height, target_width = metadata.input_shape
+            
+            # Apply center crop if specified
+            if model_config["center_crop"] is not None:
+                from preprocess import get_center_crop_value, get_center_crop
+                center_crop = get_center_crop_value(image.shape[:2], model_config["center_crop"], model_config.get("center_crop_min_size"))
+                if center_crop is not None:
+                    image, _ = get_center_crop(image, center_crop)
+            
+            # Convert color format if needed
+            if model_config["color_format"] == "BGR":
+                image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+            
+            # Direct resize to target size (no aspect ratio preservation, no padding)
+            resized_image = cv2.resize(image, (target_width, target_height))
+            
+            # For direct resizing, calculate the actual scaling factors
+            ratio_x = target_width / image.shape[1]
+            ratio_y = target_height / image.shape[0]
+            # Return separate ratios for proper coordinate transformation
+            ratio = (ratio_x, ratio_y)
+            # No padding with direct resizing
+            paddings = (0, 0)
+            
+            # Apply channel swapping (typically (2, 0, 1) for RGB -> CHW)
+            processed_image = resized_image.transpose(model_config["swap"])
+            
+            # Apply normalization if required
+            if metadata.requires_normalization:  # True for "none", False for "normalize"/"nv12"
+                processed_image = processed_image.astype(np.float32)
+                for c in range(processed_image.shape[0]):
+                    processed_image[c] = (processed_image[c] + metadata.mean_list[c]) * metadata.scale_list[c]
+                processed_image = np.ascontiguousarray(processed_image, dtype=np.float32)
+            else:
+                # For models with built-in normalization, ensure uint8 format
+                processed_image = np.ascontiguousarray(processed_image, dtype=np.uint8)
             
             return processed_image[np.newaxis], ratio, paddings
         else:
