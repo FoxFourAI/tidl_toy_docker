@@ -35,6 +35,7 @@ class CompilerArgs:
     visualize: bool
     visualization_task: str
     optimization_level: str = "normalize"  # "none", "normalize", "nv12"
+    resize_type: str = "resize"  # "resize", "letterbox"
     scale_list: Tuple[float, float, float] = (0.003921568627, 0.003921568627, 0.003921568627)
     mean_list: Tuple[float, float, float] = (0.0, 0.0, 0.0)
     inference_image_index: int = 0  # Index of calibration image to use for visualization
@@ -499,20 +500,38 @@ class YoloV8Compiler:
         if metadata.input_type == "nv12":
             # For NV12 models, convert RGB to NV12
             if len(image.shape) == 3 and image.shape[2] == 3:  # RGB image
-                # First resize to target size, keeping RGB format for NV12 conversion
                 import cv2
                 
                 target_height, target_width = metadata.input_shape
-                # Direct resize to target size (no aspect ratio preservation, no padding)
-                resized_image = cv2.resize(image, (target_width, target_height))
                 
-                # For direct resizing, calculate the actual scaling factors
-                ratio_x = target_width / image.shape[1]
-                ratio_y = target_height / image.shape[0]
-                # Return separate ratios for proper coordinate transformation
-                ratio = (ratio_x, ratio_y)
-                # No padding with direct resizing
-                paddings = (0, 0)
+                if self.compiler_args.resize_type == "resize":
+                    # Direct resize to target size (no aspect ratio preservation, no padding)
+                    resized_image = cv2.resize(image, (target_width, target_height))
+                    
+                    # For direct resizing, calculate the actual scaling factors
+                    ratio_x = target_width / image.shape[1]
+                    ratio_y = target_height / image.shape[0]
+                    # Return separate ratios for proper coordinate transformation
+                    ratio = (ratio_x, ratio_y)
+                    # No padding with direct resizing
+                    paddings = (0, 0)
+                    
+                elif self.compiler_args.resize_type == "letterbox":
+                    # Letterbox resize (maintain aspect ratio with padding)
+                    from preprocess import yolo_resize_with_pad
+                    # yolo_resize_with_pad returns (padded_img, ratio)
+                    resized_image, ratio = yolo_resize_with_pad(image, (target_height, target_width))
+                    
+                    # Calculate padding for postprocessing (image is placed at top-left in current implementation)
+                    original_h, original_w = image.shape[:2]
+                    new_h = int(original_h * ratio)
+                    new_w = int(original_w * ratio)
+                    
+                    # Current implementation places image at top-left, so no top/left padding for coordinate transformation
+                    paddings = (0, 0)
+                    
+                else:
+                    raise ValueError(f"Unknown resize_type: {self.compiler_args.resize_type}")
                 
                 # Convert to NV12 (returns tuple of Y and UV data)
                 y_data, uv_data = self.rgb_to_nv12(resized_image)
@@ -521,7 +540,7 @@ class YoloV8Compiler:
                 raise ValueError("NV12 models require RGB input image")
                 
         elif metadata.input_type == "rgb":
-            # For RGB models - direct resize without padding (consistent with NV12)
+            # For RGB models
             import cv2
             
             target_height, target_width = metadata.input_shape
@@ -537,16 +556,34 @@ class YoloV8Compiler:
             if model_config["color_format"] == "BGR":
                 image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
             
-            # Direct resize to target size (no aspect ratio preservation, no padding)
-            resized_image = cv2.resize(image, (target_width, target_height))
-            
-            # For direct resizing, calculate the actual scaling factors
-            ratio_x = target_width / image.shape[1]
-            ratio_y = target_height / image.shape[0]
-            # Return separate ratios for proper coordinate transformation
-            ratio = (ratio_x, ratio_y)
-            # No padding with direct resizing
-            paddings = (0, 0)
+            if self.compiler_args.resize_type == "resize":
+                # Direct resize to target size (no aspect ratio preservation, no padding)
+                resized_image = cv2.resize(image, (target_width, target_height))
+                
+                # For direct resizing, calculate the actual scaling factors
+                ratio_x = target_width / image.shape[1]
+                ratio_y = target_height / image.shape[0]
+                # Return separate ratios for proper coordinate transformation
+                ratio = (ratio_x, ratio_y)
+                # No padding with direct resizing
+                paddings = (0, 0)
+                
+            elif self.compiler_args.resize_type == "letterbox":
+                # Letterbox resize (maintain aspect ratio with padding)
+                from preprocess import yolo_resize_with_pad
+                # yolo_resize_with_pad returns (padded_img, ratio)
+                resized_image, ratio = yolo_resize_with_pad(image, (target_height, target_width))
+                
+                # Calculate padding for postprocessing (image is placed at top-left in current implementation)
+                original_h, original_w = image.shape[:2]
+                new_h = int(original_h * ratio)
+                new_w = int(original_w * ratio)
+                
+                # Current implementation places image at top-left, so no top/left padding for coordinate transformation
+                paddings = (0, 0)
+                
+            else:
+                raise ValueError(f"Unknown resize_type: {self.compiler_args.resize_type}")
             
             # Apply channel swapping (typically (2, 0, 1) for RGB -> CHW)
             processed_image = resized_image.transpose(model_config["swap"])
@@ -861,6 +898,7 @@ def run_cli(
     visualize: bool,
     visualization_task: str,
     optimization_level: str = "normalize",
+    resize_type: str = "resize",
     scale_list: Tuple[float, float, float] = (0.003921568627, 0.003921568627, 0.003921568627),
     mean_list: Tuple[float, float, float] = (0.0, 0.0, 0.0),
     inference_image_index: int = 0
@@ -881,6 +919,7 @@ def run_cli(
         visualize=visualize,
         visualization_task=visualization_task,
         optimization_level=optimization_level,
+        resize_type=resize_type,
         scale_list=scale_list,
         mean_list=mean_list,
         inference_image_index=inference_image_index
@@ -926,6 +965,9 @@ if __name__ == "__main__":
     parser.add_argument('--optimization_level', type=str, default='normalize',
                         choices=['none', 'normalize', 'nv12'],
                         help='Model optimization level: none (original model), normalize (add normalization), nv12 (add NV12 conversion + normalization)')
+    parser.add_argument('--resize_type', type=str, default='resize',
+                        choices=['resize', 'letterbox'],
+                        help='Resize type for model optimization')
     parser.add_argument('--scale_list', type=str, default='0.003921568627,0.003921568627,0.003921568627',
                         help='Scale list for model optimization in format "r,g,b"')
     parser.add_argument('--mean_list', type=str, default='0.0,0.0,0.0',
@@ -976,6 +1018,7 @@ if __name__ == "__main__":
         visualize=args.visualize,
         visualization_task=args.visualization_task,
         optimization_level=args.optimization_level,
+        resize_type=args.resize_type,
         scale_list=scale_list,
         mean_list=mean_list,
         inference_image_index=args.inference_image_index

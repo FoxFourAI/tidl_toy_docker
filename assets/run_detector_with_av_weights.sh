@@ -23,6 +23,7 @@ TENSOR_BITS=8
 SCALE_LIST="0.003921568627,0.003921568627,0.003921568627"  # 1/255 for each channel
 MEAN_LIST="0.0,0.0,0.0"  # No mean subtraction
 OPTIMIZATION_LEVEL="nv12"  # Options: "none", "normalize", "nv12"
+RESIZE_TYPE="letterbox"  # Options: "resize" (direct), "letterbox" (aspect ratio preserving)
 INFERENCE_IMAGE_INDEX=2    # Index of calibration image to use for visualization
 
 # Check if files and directories exist
@@ -64,6 +65,7 @@ echo "Running visualization on 32-bit model..."
     --optimization_level "$OPTIMIZATION_LEVEL" \
     --inference_image_index "$INFERENCE_IMAGE_INDEX" \
     --operation_type "visualize_32bit" \
+    --resize_type "$RESIZE_TYPE" \
     --visualize
 
 # ============================================================
@@ -85,6 +87,7 @@ python3 ${SCRIPT_DIR}/yolo_v8_compiler.py \
     --optimization_level "$OPTIMIZATION_LEVEL" \
     --inference_image_index "$INFERENCE_IMAGE_INDEX" \
     --operation_type "visualize_8bit" \
+    --resize_type "$RESIZE_TYPE" \
     --visualize
 
 # ON DEVICE ONLY

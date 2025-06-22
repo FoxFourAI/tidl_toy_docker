@@ -43,6 +43,7 @@ Important parameters:
 * `INPUT_SHAPE` - input shape of the model (736,1280 is recommended)
 * `CALIBRATION_ITERATIONS` - number of calibration iterations (20 is recommended)
 * `MAX_CALIBRATION_IMAGES` - number of calibration images (50 is recommended)
+* `RESIZE_TYPE` - image preprocessing method: "resize" (direct) or "letterbox" (aspect-preserving)
 
 Time of compilation:
 `CALIBRATION_ITERATIONS` * `MAX_CALIBRATION_IMAGES` - for testing use 2 (iterations) * 3 (images) = 6 total iterations (~10 minutes, 520.4121 seconds on my local runs)
@@ -71,33 +72,91 @@ bash ./assets/run_detector_with_av_weights.sh
 ```
 
 # Details
+
+## Image Preprocessing Options
+
+The YOLO v8 compiler now supports two image preprocessing modes via the `RESIZE_TYPE` parameter:
+
+### **"resize" Mode (Direct Resizing) - Default**
+- **Usage**: `RESIZE_TYPE="resize"`
+- **Behavior**: Direct resize to target dimensions without preserving aspect ratio
+- **Advantages**: 
+  - Consistent with many model training pipelines
+  - **Fixed bounding box alignment issues** (eliminates horizontal/vertical offsets)
+  - Better coordinate accuracy for models trained on directly resized images
+- **Use when**: Model was trained on directly resized images
+
+### **"letterbox" Mode (Aspect-Preserving)**
+- **Usage**: `RESIZE_TYPE="letterbox"`
+- **Behavior**: Maintains original aspect ratio with padding (traditional YOLO preprocessing)
+- **Advantages**: 
+  - Preserves object proportions
+  - Traditional YOLO approach
+- **Use when**: Model was trained with letterboxing or when object proportion preservation is critical
+
+### Example Configuration:
+```bash
+# For models trained with direct resizing (recommended for better accuracy)
+RESIZE_TYPE="resize"
+
+# For traditional YOLO letterboxing
+RESIZE_TYPE="letterbox"
+```
+
 ## Model Optimization Levels
 
-The YOLO v8 compiler now supports different optimization levels:
+The YOLO v8 compiler supports different optimization levels for various input formats:
 
-* `"none"` - Keep original model unchanged, requires manual input normalization
-* `"normalize"` - Add normalization to ONNX model (default, backward compatible)  
-* `"nv12"` - Add NV12 input conversion + normalization for TI hardware
+### **"none" - Original Model**
+- **Input**: Float RGB images [0,1] 
+- **Normalization**: Manual (user responsibility)
+- **Use case**: When you want full control over preprocessing
+- **Compatible with**: Both `resize` and `letterbox` modes
+
+### **"normalize" - Built-in Normalization (Default)**
+- **Input**: uint8 RGB images [0,255]
+- **Normalization**: Built into model (automatic)
+- **Use case**: Standard RGB input with automatic normalization
+- **Compatible with**: Both `resize` and `letterbox` modes
+
+### **"nv12" - TI Hardware Optimized**
+- **Input**: NV12 format (Y and UV planes)
+- **Normalization**: Built into model (automatic)
+- **Conversion**: Automatic RGB→NV12 conversion + normalization
+- **Use case**: Optimized for TI hardware accelerators
+- **Compatible with**: Both `resize` and `letterbox` modes
 
 ### Usage Example:
 ```bash
-# For standard RGB input with built-in normalization (default)
+# Standard configuration with direct resizing and built-in normalization
 OPTIMIZATION_LEVEL="normalize"
+RESIZE_TYPE="resize"
 
-# For NV12 input format (TI hardware optimized)
-OPTIMIZATION_LEVEL="nv12"
+# TI hardware optimized with letterboxing
+OPTIMIZATION_LEVEL="nv12"  
+RESIZE_TYPE="letterbox"
 
-# For original model without modifications
+# Original model with direct resizing
 OPTIMIZATION_LEVEL="none"
+RESIZE_TYPE="resize"
 ```
 
-### NV12 Format
-NV12 is a YUV format commonly used in hardware accelerators. When using `optimization_level="nv12"`:
-- Input images are automatically converted from RGB to NV12 format
-- Built-in normalization is applied
-- Optimized for TI hardware processing
+## Coordinate Transformation Improvements
 
-Example:
+Recent updates include **significant improvements to bounding box accuracy**:
+
+- **Fixed horizontal/vertical offsets** that caused bounding boxes to appear slightly displaced
+- **Improved coordinate transformation** for direct resizing with separate X/Y scaling factors
+- **Enhanced postprocessing** that handles both single ratio (letterbox) and dual ratio (direct resize) modes
+- **Backward compatibility** maintained for existing models
+
+### NV12 Format Details
+NV12 is a YUV format commonly used in hardware accelerators. When using `optimization_level="nv12"`:
+- Input images are automatically converted from RGB to NV12 format using BT.601 full-range conversion
+- Built-in normalization is applied after conversion
+- Optimized for TI hardware processing with proper coordinate handling
+
+Example configuration:
 ```bash
 WEIGHTS_PATH="${BASE_DIR}/assets/detectors/epoch_1.onnx"
 META_LAYERS_LIST="${BASE_DIR}/assets/detectors/epoch_1.prototxt"
@@ -110,7 +169,8 @@ MAX_CALIBRATION_IMAGES=3
 MAX_ELEMENTS=5
 DEBUG_LEVEL=7
 TENSOR_BITS=8
-OPTIMIZATION_LEVEL="nv12"  # or "nv12" for NV12 input
+OPTIMIZATION_LEVEL="nv12"  # NV12 input format
+RESIZE_TYPE="resize"  # Direct resizing for better accuracy
 SCALE_LIST="0.003921568627,0.003921568627,0.003921568627"  # 1/255 for each channel
 MEAN_LIST="0.0,0.0,0.0"  # No mean subtraction
 ```
@@ -130,13 +190,18 @@ assets/
 ├── detector_artifacts/
 │   ├── test_run_mmyolo/
 │   │   ├── onnx/                      # ONNX model with optimized operations and preprocessing node
+│   │   │   ├── model_with_shapes.onnx # Optimized model with preprocessing
+│   │   │   └── config.yaml            # Model metadata and configuration
 │   │   ├── onnx_tidl/default/         # Compiled model artifacts folder
 │   │   └── visualizations/            # Visualizations of the 8/32-bit model
 ```
 
 ## Notes
 
-* one image inference on PC took like ~1 minute
+* One image inference on PC takes ~1 minute
+* **Bounding box accuracy significantly improved** with latest coordinate transformation fixes
+* Both preprocessing modes (`resize`/`letterbox`) work with all optimization levels (`none`/`normalize`/`nv12`)
+* Default configuration uses `RESIZE_TYPE="resize"` for better coordinate accuracy
 
 ## Test Repository (Optional)
 ### Prepare Detector weights
@@ -161,22 +226,21 @@ bash ./assets/compile_detector_with_av_weights.sh
 bash ./assets/run_detector_with_av_weights.sh
 ```
 
-**Note:** The AV weights scripts use different configurations:
+**Note:** The AV weights scripts use optimized configurations with direct resizing for improved accuracy:
 
 **Compilation script** (`compile_detector_with_av_weights.sh`):
 - Weights: `assets/detectors/best_coco_bbox_mAP_epoch_120.onnx`
 - Meta layers: `assets/detectors/best_coco_bbox_mAP_epoch_120.prototxt`
 - Calibration data: `assets/av_calibration_dataset`
-- Artifacts folder: `assets/detector_artifacts/yolov8ti-m-736x1280-vehicles-rev-3-250523`
-- Calibration iterations: 10 (fast compilation)
-- Max calibration images: 25
+- Artifacts folder: `assets/detector_artifacts/armored-vehicles-detector-nv12-250609-v3`
+- Optimization level: `nv12` (TI hardware optimized)
+- Resize type: `resize` (direct resizing for better accuracy)
+- Calibration iterations: 20
+- Max calibration images: 50
 
 **Runtime script** (`run_detector_with_av_weights.sh`):
-- Weights: `assets/detectors/best_coco_bbox_mAP_epoch_120.onnx`
-- Meta layers: `assets/detectors/best_coco_bbox_mAP_epoch_120.prototxt`
-- Calibration data: `assets/av_calibration_dataset`
-- Artifacts folder: `assets/detector_artifacts/yolov8ti-m-736x1280-vehicles-rev-3-250523`
-- Calibration iterations: 10 (higher quality)
-- Max calibration images: 25
+- Same configuration as compilation script
+- Provides both 32-bit and 8-bit model visualizations
+- Includes performance measurement capabilities
 
-The compilation script is optimized for faster testing, while the runtime script uses higher quality settings and different model weights for better vehicle detection performance.
+The scripts now use improved coordinate transformation for more accurate bounding box placement and support both direct resizing and letterboxing modes.

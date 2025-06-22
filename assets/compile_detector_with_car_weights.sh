@@ -23,6 +23,7 @@ TENSOR_BITS=8
 SCALE_LIST="0.003921568627,0.003921568627,0.003921568627"  # 1/255 for each channel
 MEAN_LIST="0.0,0.0,0.0"  # No mean subtraction
 OPTIMIZATION_LEVEL="nv12"  # Options: "none", "normalize", "nv12"
+RESIZE_TYPE="letterbox"  # Options: "resize" (direct), "letterbox" (aspect ratio preserving)
 INFERENCE_IMAGE_INDEX=2    # Index of calibration image to use for visualization
 
 # Check if files and directories exist
@@ -64,7 +65,8 @@ echo "Starting YOLOv8 optimization with $INPUT_SHAPE input shape..."
     --tensor_bits "$TENSOR_BITS" \
     --optimization_level "$OPTIMIZATION_LEVEL" \
     --inference_image_index "$INFERENCE_IMAGE_INDEX" \
-    --operation_type "optimize"
+    --operation_type "optimize" \
+    --resize_type "$RESIZE_TYPE"
 
 echo "Optimization completed successfully!"
 
@@ -88,6 +90,7 @@ echo "Running visualization on 32-bit model..."
     --optimization_level "$OPTIMIZATION_LEVEL" \
     --inference_image_index "$INFERENCE_IMAGE_INDEX" \
     --operation_type "visualize_32bit" \
+    --resize_type "$RESIZE_TYPE" \
     --visualize
 
 # ============================================================
@@ -116,6 +119,7 @@ python3 ${SCRIPT_DIR}/yolo_v8_compiler.py \
     --optimization_level "$OPTIMIZATION_LEVEL" \
     --operation_type "compile" \
     --inference_image_index "$INFERENCE_IMAGE_INDEX" \
+    --resize_type "$RESIZE_TYPE" \
     | tee -a "$ARTIFACTS_FOLDER/logs.txt"
 
 echo "Compilation completed successfully!"
