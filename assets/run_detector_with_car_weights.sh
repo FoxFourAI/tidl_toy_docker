@@ -1,5 +1,5 @@
 #!/bin/bash
-# Script to run YOLOv8 model for TI hardware with car weights
+# Script to compile YOLOv8 model for TI hardware with car weights
 # This uses a 736x1280 input resolution
 
 # Set script to exit on any error
@@ -10,11 +10,11 @@ BASE_DIR="/home/workdir"
 MODEL_PATH="${BASE_DIR}/assets/detectors/epoch_14.onnx"
 PROTOTXT_PATH="${BASE_DIR}/assets/detectors/epoch_14.prototxt"
 CALIBRATION_FOLDER="${BASE_DIR}/assets/vis-drone-sample"
-ARTIFACTS_FOLDER="${BASE_DIR}/assets/detector_artifacts/civil-vehicles-detector-nv12-250609-v3"
+ARTIFACTS_FOLDER="${BASE_DIR}/assets/detector_artifacts/civil-vehicles-detector-nv12-250622-v"
 COMPILATION_NAME="default"
 INPUT_SHAPE="736,1280"
-CALIBRATION_ITERATIONS=30
-MAX_CALIBRATION_IMAGES=10
+CALIBRATION_ITERATIONS=30 # 30
+MAX_CALIBRATION_IMAGES=10 # 10
 MAX_ELEMENTS=5
 DEBUG_LEVEL=7
 TENSOR_BITS=8
