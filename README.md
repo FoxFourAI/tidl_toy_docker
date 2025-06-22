@@ -1,4 +1,4 @@
-## Basic Commands
+# Usage
 
 ### Build Container
 ```bash
@@ -41,8 +41,8 @@ assets/
 
 Important parameters:
 * `INPUT_SHAPE` - input shape of the model (736,1280 is recommended)
-* `CALIBRATION_ITERATIONS` - number of calibration iterations
-* `MAX_CALIBRATION_IMAGES` - number of calibration images
+* `CALIBRATION_ITERATIONS` - number of calibration iterations (20 is recommended)
+* `MAX_CALIBRATION_IMAGES` - number of calibration images (50 is recommended)
 
 Time of compilation:
 `CALIBRATION_ITERATIONS` * `MAX_CALIBRATION_IMAGES` - for testing use 2 (iterations) * 3 (images) = 6 total iterations (~10 minutes, 520.4121 seconds on my local runs)
@@ -63,6 +63,14 @@ Parameters, likely you will not need to change them:
 * `MEAN_LIST` - mean list for the model
 * `OPTIMIZATION_LEVEL` - model optimization level (see below)
 
+### Run in container
+
+```bash
+bash ./assets/compile_detector_with_av_weights.sh
+bash ./assets/run_detector_with_av_weights.sh
+```
+
+# Details
 ## Model Optimization Levels
 
 The YOLO v8 compiler now supports different optimization levels:
@@ -102,17 +110,17 @@ MAX_CALIBRATION_IMAGES=3
 MAX_ELEMENTS=5
 DEBUG_LEVEL=7
 TENSOR_BITS=8
-OPTIMIZATION_LEVEL="normalize"  # or "nv12" for NV12 input
+OPTIMIZATION_LEVEL="nv12"  # or "nv12" for NV12 input
 SCALE_LIST="0.003921568627,0.003921568627,0.003921568627"  # 1/255 for each channel
 MEAN_LIST="0.0,0.0,0.0"  # No mean subtraction
 ```
 
-### Copy-paste edited variables from `assets/compile_detector_with_av_weights.sh` to `assets/run_detector_with_av_weights.sh`
+### Copy-paste edited variables from `assets/compile_detector_with_car_quick_weights.sh` to `assets/run_detector_with_car_quick_weights.sh`
 
 ### Compile & Run Detector with AV Weights
 ```bash
-bash ./assets/compile_detector_with_av_weights.sh
-bash ./assets/run_detector_with_av_weights.sh
+bash ./assets/compile_detector_with_car_quick_weights.sh
+bash ./assets/run_detector_with_car_quick_weights.sh
 ```
 
 ### Output file structure
