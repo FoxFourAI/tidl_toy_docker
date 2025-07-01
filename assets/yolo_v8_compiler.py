@@ -11,7 +11,6 @@ import onnx
 import onnx.shape_inference
 
 from interface import DetectionResult
-from preprocess import preprocess
 from postprocess import postprocess
 from utils import visualize_detections, read_image, save_image
 
