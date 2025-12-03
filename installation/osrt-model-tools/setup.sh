@@ -34,13 +34,20 @@
 # upgrade pip
 ${TIDL_PYTHON_INTERPRETER_PATH}/pip install --no-input --upgrade pip setuptools
 
+# REMOVED DEPENDENCIES
+# wheel
+# numpy==1.23.0
+# protobuf==3.20.3
+# onnx==1.14.0
+# onnxsim==0.4.35
+# git+https://github.com/NVIDIA/TensorRT@release/8.5#subdirectory=tools/onnx-graphsurgeon
 
-echo 'Installing python packages...'
-while IFS= read -r line;
-do
-	echo "${TIDL_PYTHON_INTERPRETER_PATH}/pip install --no-input $line";
-	${TIDL_PYTHON_INTERPRETER_PATH}/pip install --no-input $line;
-done < requirements.txt
+# echo 'Installing python packages...'
+# while IFS= read -r line;
+# do
+# 	echo "${TIDL_PYTHON_INTERPRETER_PATH}/pip install --no-input $line";
+# 	${TIDL_PYTHON_INTERPRETER_PATH}/pip install --no-input $line;
+# done < requirements.txt
 
 echo 'installing the onnx graph optimization toolkit...'
-${TIDL_PYTHON_INTERPRETER_PATH}/python ./setup.py develop
+${TIDL_PYTHON_INTERPRETER_PATH}/pip install -e . --no-build-isolation

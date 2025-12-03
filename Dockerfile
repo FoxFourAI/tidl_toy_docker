@@ -57,6 +57,10 @@ RUN /bin/bash ~/miniconda.sh -b -p /opt/conda
 RUN rm ~/miniconda.sh
 ENV PATH /opt/conda/bin:$PATH
 
+# Accept conda ToS for required channels
+RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+
 RUN mkdir installation
 WORKDIR /home/workdir/installation
 ADD installation/environment.yml environment.yml
@@ -67,8 +71,8 @@ ENV PATH /opt/conda/envs/tidl-py310/bin:$PATH
 
 ADD installation/requirements.txt requirements.txt
 RUN /opt/conda/envs/tidl-py310/bin/pip install -r requirements.txt
-RUN pip install git+https://github.com/NVIDIA/TensorRT@release/8.5#subdirectory=tools/onnx-graphsurgeon
-RUN pip install opencv-python
+RUN /opt/conda/envs/tidl-py310/bin/pip install --no-build-isolation git+https://github.com/NVIDIA/TensorRT@release/8.5#subdirectory=tools/onnx-graphsurgeon
+RUN /opt/conda/envs/tidl-py310/bin/pip install opencv-python==4.11.0.86
 
 # Needed to have a PC environment for running the YOLO compiler with installed not custom TIDL onnxruntime
 ADD installation/environment_pc.yml environment_pc.yml
